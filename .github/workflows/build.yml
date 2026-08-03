@@ -2,12 +2,9 @@ name: Build & Release
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
+    tags:
+      - 'v*'           # v1.0.0, v1.2.3 etc. tag push hone par build hoga
+  workflow_dispatch:   # GitHub UI se bhi manually trigger kar sako
 
 jobs:
   build-tauri:
@@ -17,14 +14,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest' # In case they want macOS too
-            args: ''
           - platform: 'ubuntu-22.04'
             args: ''
           - platform: 'windows-latest'
             args: ''
 
     runs-on: ${{ matrix.platform }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -42,23 +38,42 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
-      - name: Install dependencies (Ubuntu only)
+      - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev pkg-config
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl wget file \
+            libxdo-dev \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            pkg-config
 
       - name: Install frontend dependencies
         run: npm install
 
-      - name: Build Tauri App
-        uses: tauri-apps/tauri-action@v2
+      - name: Build & Release Tauri App
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__ # tauri-action replaces this with the app version
-          releaseName: 'MSM Downloader v__VERSION__'
-          releaseBody: 'Automatic release of MSM Downloader.'
-          releaseDraft: true
+          tagName: ${{ github.ref_name }}
+          releaseName: 'MSM Downloader ${{ github.ref_name }}'
+          releaseBody: |
+            ## MSM Downloader ${{ github.ref_name }}
+
+            ### Downloads
+            - **Linux**: `.AppImage` (portable) ya `.deb` (Ubuntu/Mint)
+            - **Windows**: `.msi` (installer) ya `.exe` (NSIS)
+
+            ### Installation
+            - **Linux Mint/Ubuntu**: `.deb` file download karke double-click karein
+            - **Linux (any)**: `.AppImage` download karke `chmod +x` karke run karein
+            - **Windows**: `.msi` file download karke install karein
+          releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
