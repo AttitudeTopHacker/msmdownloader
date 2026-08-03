@@ -140,7 +140,7 @@ export default function App() {
             </div>
             <div>
               <h1 className="font-extrabold text-sm tracking-wide text-white">
-                MSM MOVIN
+                MSM DOWNLOADER
               </h1>
               <span className="text-[9px] text-neutral-500 font-mono tracking-widest uppercase">
                 Ultra Downloader
