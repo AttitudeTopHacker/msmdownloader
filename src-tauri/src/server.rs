@@ -32,6 +32,13 @@ async fn handle_add(
 ) -> (StatusCode, Json<ApiResponse>) {
     let manager = app_handle.state::<DownloadManager>();
 
+    // Unminimize, show, and focus main window so the user sees the active download panel (IDM style)
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+
     match manager.add(
         body.url.clone(),
         dest_dir.clone(),

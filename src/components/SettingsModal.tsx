@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { X, Settings2, Sliders, Zap, Globe } from "lucide-react";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { IntegrationGuideModal } from "./IntegrationGuideModal";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -15,6 +15,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [mode, setMode] = useState<"auto" | "custom">("auto");
   const [count, setCount] = useState<number>(8);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -32,14 +33,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onClose();
   };
 
-  const handleOpenExtension = async (_browser: "chrome" | "firefox") => {
-    // Both Chrome and Firefox buttons will download the extension zip directly from latest release
-    const url = "https://github.com/AttitudeTopHacker/msmdownloader/releases/latest/download/msmdownloader-extension.zip";
-    try {
-      await openUrl(url);
-    } catch (e) {
-      console.error(e);
-    }
+  const handleOpenExtension = (_browser: "chrome" | "firefox") => {
+    setIsGuideOpen(true);
   };
 
   return (
@@ -205,6 +200,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
       </div>
+
+      <IntegrationGuideModal
+        isOpen={isGuideOpen}
+        onClose={() => setIsGuideOpen(false)}
+      />
     </div>
   );
 };
