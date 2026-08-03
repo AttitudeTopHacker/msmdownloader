@@ -47,20 +47,15 @@ export const Splash: React.FC<SplashProps> = ({ onComplete }) => {
         <div className="relative w-24 h-24 mb-6 flex items-center justify-center">
           <div className="absolute inset-0 rounded-2xl bg-gradient-to-tr from-indigo-600 to-cyan-500 opacity-20 blur-lg animate-pulse"></div>
           <div className="absolute inset-0 rounded-2xl border border-indigo-500/30 bg-neutral-950/80 backdrop-blur-md flex items-center justify-center shadow-2xl">
-            <svg
-              className="w-12 h-12 text-transparent bg-clip-text bg-gradient-to-tr from-indigo-400 to-cyan-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
+            <span
+              className="text-3xl font-black tracking-tight bg-gradient-to-tr from-indigo-300 via-purple-200 to-cyan-300 bg-clip-text text-transparent select-none animate-[pulse_3s_infinite] hover:scale-110 hover:rotate-3 transition-transform duration-300"
+              style={{
+                textShadow: "1px 1px 0px #312e81, 2px 2px 0px #4338ca, 3px 3px 0px #06b6d4, 4px 4px 8px rgba(0,0,0,0.6)",
+                fontFamily: "system-ui, sans-serif"
+              }}
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-              />
-            </svg>
+              MSM
+            </span>
           </div>
         </div>
 

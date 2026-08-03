@@ -36,6 +36,7 @@ native-tls = "0.2"
 postgres-native-tls = "0.5"
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors"] }
+dirs = "5"
 
 
 

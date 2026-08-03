@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "MSM Downloader",
+  "version": "1.0.0",
+  "description": "Intercepts browser downloads and sends them to MSM Downloader app for faster multi-connection downloading.",
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "MSM Downloader"
+  },
+
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+
+  "permissions": [
+    "downloads",
+    "downloads.open",
+    "storage",
+    "notifications"
+  ],
+
+  "host_permissions": [
+    "http://127.0.0.1:9999/*"
+  ],
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "msm-downloader@attitudetophacker",
+      "strict_min_version": "112.0"
+    }
+  }
+}

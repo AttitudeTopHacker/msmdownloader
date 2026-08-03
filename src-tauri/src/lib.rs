@@ -1,8 +1,9 @@
 mod download;
+mod server;
 
 use download::manager::DownloadManager;
 use download::types::DownloadItem;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Emitter};
 
 #[tauri::command]
 fn get_downloads(manager: tauri::State<'_, DownloadManager>) -> Vec<DownloadItem> {
@@ -64,13 +65,34 @@ fn select_directory() -> Option<String> {
         .map(|path| path.to_string_lossy().to_string())
 }
 
+/// Called by frontend to tell the backend which folder to use for extension-triggered downloads
+#[tauri::command]
+fn set_extension_download_dir(
+    dir: String,
+    app: AppHandle,
+) {
+    // Re-start server with updated dir — for now emit an event the server can consume
+    app.emit("extension-dir-changed", dir).ok();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let manager = DownloadManager::new(&app.handle());
+            let handle = app.handle().clone();
+            let manager = DownloadManager::new(&handle);
             app.manage(manager);
+
+            // Start local HTTP server for browser extension on port 9999
+            // Default download dir: user's Downloads folder
+            let dest_dir = dirs::download_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .to_string_lossy()
+                .to_string();
+
+            server::start_local_server(handle, dest_dir);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -80,9 +102,9 @@ pub fn run() {
             resume_download,
             cancel_download,
             delete_download,
-            select_directory
+            select_directory,
+            set_extension_download_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-

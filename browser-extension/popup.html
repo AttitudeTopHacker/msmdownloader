@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MSM Downloader</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <img src="icons/icon32.png" alt="MSM" class="logo" />
+      <div>
+        <h1 class="title">MSM Downloader</h1>
+        <p class="subtitle">Browser Extension</p>
+      </div>
+    </div>
+
+    <!-- Status indicator -->
+    <div class="status-card" id="statusCard">
+      <div class="status-dot" id="statusDot"></div>
+      <span class="status-text" id="statusText">Checking app...</span>
+    </div>
+
+    <!-- Main toggle -->
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <p class="toggle-label">Intercept Downloads</p>
+        <p class="toggle-desc">Send all downloads to MSM Downloader</p>
+      </div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="enableToggle" />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <!-- Download folder setting -->
+    <div class="setting-row">
+      <label class="setting-label">Download Folder</label>
+      <input
+        type="text"
+        id="folderInput"
+        class="setting-input"
+        placeholder="/home/user/Downloads"
+        readonly
+      />
+    </div>
+
+    <!-- Skip extensions -->
+    <div class="setting-row">
+      <label class="setting-label">Skip These Extensions</label>
+      <input
+        type="text"
+        id="skipExts"
+        class="setting-input"
+        placeholder="html,htm,xml,json"
+      />
+      <p class="setting-hint">Comma separated. These will use browser download.</p>
+    </div>
+
+    <button class="save-btn" id="saveBtn">Save Settings</button>
+
+    <!-- Footer -->
+    <div class="footer">
+      <span>v1.0.0 · AttitudeTopHacker</span>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
