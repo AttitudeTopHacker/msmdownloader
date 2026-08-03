@@ -2398,6 +2398,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "msmdownloader"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "dirs 5.0.1",
+ "futures-util",
+ "memmap2",
+ "native-tls",
+ "percent-encoding",
+ "postgres-native-tls",
+ "reqwest 0.12.28",
+ "rfd",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tokio",
+ "tokio-postgres",
+ "tokio-util",
+ "tower-http 0.5.2",
+ "uuid",
+]
+
+[[package]]
 name = "muda"
 version = "0.19.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4224,31 +4249,6 @@ dependencies = [
  "webview2-com",
  "window-vibrancy",
  "windows",
-]
-
-[[package]]
-name = "tauri-app"
-version = "0.1.0"
-dependencies = [
- "axum",
- "dirs 5.0.1",
- "futures-util",
- "memmap2",
- "native-tls",
- "percent-encoding",
- "postgres-native-tls",
- "reqwest 0.12.28",
- "rfd",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tokio",
- "tokio-postgres",
- "tokio-util",
- "tower-http 0.5.2",
- "uuid",
 ]
 
 [[package]]

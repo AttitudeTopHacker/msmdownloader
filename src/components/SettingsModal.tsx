@@ -32,13 +32,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     onClose();
   };
 
-  const handleOpenExtension = async (browser: "chrome" | "firefox") => {
-    let url = "";
-    if (browser === "chrome") {
-      url = "https://github.com/AttitudeTopHacker/msmdownloader#browser-extension-setup-chrome-edge-brave-opera";
-    } else {
-      url = "https://github.com/AttitudeTopHacker/msmdownloader#firefox-setup";
-    }
+  const handleOpenExtension = async (_browser: "chrome" | "firefox") => {
+    // Both Chrome and Firefox buttons will download the extension zip directly from latest release
+    const url = "https://github.com/AttitudeTopHacker/msmdownloader/releases/latest/download/msmdownloader-extension.zip";
     try {
       await openUrl(url);
     } catch (e) {
