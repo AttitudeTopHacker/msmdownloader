@@ -14,10 +14,7 @@ import {
   FileImage,
   AlertTriangle,
   CheckCircle,
-  Download,
   Info,
-  X,
-  HardDriveDownload,
   ListX,
   RefreshCw,
   WifiOff,
@@ -36,6 +33,8 @@ export interface ChunkInfo {
 
 export interface ProgressPayload {
   id: string;
+  file_name: string;
+  file_path: string;
   downloaded: number;
   total_size: number;
   status: any; // DownloadStatus

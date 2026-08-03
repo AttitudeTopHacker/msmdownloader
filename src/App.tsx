@@ -4,9 +4,6 @@ import { listen } from "@tauri-apps/api/event";
 import {
   Download,
   Plus,
-  Play,
-  Pause,
-  Trash2,
   Settings,
   Shield,
   Zap,

@@ -44,7 +44,8 @@ export const DownloadDetailsModal: React.FC<DownloadDetailsModalProps> = ({
   const [status, setStatus] = useState(item.status);
   const [chunks, setChunks] = useState<ChunkInfo[]>(item.chunks || []);
   const [fileName, setFileName] = useState(item.file_name);
-  const [filePath, setFilePath] = useState(item.file_path);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_filePath, setFilePath] = useState(item.file_path);
   const [activeTab, setActiveTab] = useState<"status" | "limiter" | "completion">("status");
 
   // Window coordinates and sizes
@@ -412,7 +413,6 @@ export const DownloadDetailsModal: React.FC<DownloadDetailsModalProps> = ({
                       {chunks.length > 0 ? (
                         chunks.map((chunk, index) => {
                           const progress = chunk.current - chunk.start;
-                          const total = chunk.end - chunk.start;
                           const isCompleted = chunk.current > chunk.end;
                           const isRunning = isDownloading && !isCompleted;
                           return (

@@ -317,7 +317,9 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-sm font-semibold text-neutral-300 flex items-center space-x-1.5">
                     <span>Parallel Connections</span>
-                    <HelpCircle size={14} className="text-neutral-500 cursor-help" title="More chunks accelerate download speed by querying ranges simultaneously." />
+                    <span title="More chunks accelerate download speed by querying ranges simultaneously." className="cursor-help">
+                      <HelpCircle size={14} className="text-neutral-500" />
+                    </span>
                   </label>
                   <span className="text-xs text-indigo-400 font-mono font-bold bg-indigo-950/50 px-2 py-0.5 border border-indigo-900/50 rounded">
                     {maxChunks} Connections
