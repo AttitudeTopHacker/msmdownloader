@@ -19,6 +19,7 @@ import { Splash } from "./components/Splash";
 import { AddDownloadModal } from "./components/AddDownloadModal";
 import { DownloadItemRow } from "./components/DownloadItemRow";
 import { SettingsModal } from "./components/SettingsModal";
+import { CollisionDialog, CollisionData } from "./components/CollisionDialog";
 import { formatSpeed } from "./utils/format";
 
 type Tab = "all" | "downloading" | "completed" | "paused" | "failed";
@@ -30,6 +31,7 @@ export default function App() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [globalSpeed, setGlobalSpeed] = useState(0);
+  const [collisionData, setCollisionData] = useState<CollisionData | null>(null);
 
   const [connectionMode, setConnectionMode] = useState<"auto" | "custom">(() => {
     return (localStorage.getItem("msm_connection_mode") as "auto" | "custom") || "auto";
@@ -68,6 +70,7 @@ export default function App() {
 
     let unlistenState: (() => void) | null = null;
     let unlistenProgress: (() => void) | null = null;
+    let unlistenCollision: (() => void) | null = null;
 
     const setupListeners = async () => {
       // Refresh list whenever any download state changes globally
@@ -80,6 +83,11 @@ export default function App() {
         // Debounced or simple refresh
         fetchDownloads();
       });
+
+      // Listen to download collision request event
+      unlistenCollision = await listen<CollisionData>("download-collision-request", (event) => {
+        setCollisionData(event.payload);
+      });
     };
 
     setupListeners();
@@ -87,8 +95,25 @@ export default function App() {
     return () => {
       if (unlistenState) unlistenState();
       if (unlistenProgress) unlistenProgress();
+      if (unlistenCollision) unlistenCollision();
     };
   }, [fetchDownloads]);
+
+  const handleResolveCollision = async (choice: string, newFilename: string | null) => {
+    if (!collisionData) return;
+    try {
+      await invoke("resolve_download_collision", {
+        tempId: collisionData.temp_id,
+        choice,
+        newFilename,
+      });
+      setCollisionData(null);
+      fetchDownloads();
+    } catch (e) {
+      console.error("Failed to resolve collision:", e);
+      setCollisionData(null);
+    }
+  };
 
   // Periodically refresh items to calculate speeds accurately
   useEffect(() => {
@@ -270,7 +295,7 @@ export default function App() {
         <header className="h-16 border-b border-neutral-900/60 bg-[#0a0a0f]/40 backdrop-blur-md px-6 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-4">
             <h2 className="text-lg font-bold text-white tracking-wide capitalize">
-              {activeTab} Downloads
+              {activeTab === "all" ? "All Downloads" : activeTab}
             </h2>
             <span className="bg-neutral-900/85 border border-neutral-850/80 text-[10px] font-bold font-mono px-2.5 py-1 rounded-full text-neutral-400 flex items-center space-x-1 select-none">
               <span>Mode: {connectionMode === "auto" ? "Auto" : `Custom (${customConnections} Conn)`}</span>
@@ -343,7 +368,6 @@ export default function App() {
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
         onAdded={fetchDownloads}
-        existingDownloads={downloads}
       />
 
       {/* Settings Modal */}
@@ -352,6 +376,13 @@ export default function App() {
         onClose={() => setShowSettingsModal(false)}
         onSave={saveSettings}
       />
+
+      {collisionData && (
+        <CollisionDialog
+          data={collisionData}
+          onResolve={handleResolveCollision}
+        />
+      )}
     </div>
   );
 }

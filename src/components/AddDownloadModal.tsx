@@ -1,19 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { X, Folder, HelpCircle, AlertOctagon } from "lucide-react";
+import { X, Folder, HelpCircle } from "lucide-react";
 
 interface AddDownloadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdded: () => void;
-  existingDownloads?: any[];
 }
 
 export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
   isOpen,
   onClose,
   onAdded,
-  existingDownloads = [],
 }) => {
   const [urls, setUrls] = useState("");
   const [destDir, setDestDir] = useState("");
@@ -22,14 +20,6 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [isCustomMode, setIsCustomMode] = useState(false);
   const [globalCustomCount, setGlobalCustomCount] = useState(8);
-
-  const [duplicateWarning, setDuplicateWarning] = useState<{
-    url: string;
-    tentativeName: string;
-    suggestedName: string;
-    reason: "url" | "name";
-  } | null>(null);
-  const [pendingUrls, setPendingUrls] = useState<string[]>([]);
 
   // Set default download folder on mount (like standard Downloads folder)
   useEffect(() => {
@@ -86,54 +76,7 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
     checkAndProcessQueue(urlList);
   };
 
-  const getTentativeFilename = (url: string): string => {
-    try {
-      const parsed = new URL(url);
-      const pathname = parsed.pathname;
-      const segment = pathname.substring(pathname.lastIndexOf("/") + 1);
-      const decoded = decodeURIComponent(segment);
-      return decoded || "download";
-    } catch (e) {
-      return "download";
-    }
-  };
-
-  const getAutoRenamedFilename = (originalName: string, existingNames: string[]): string => {
-    let ext = "";
-    let base = originalName;
-    const lastDot = originalName.lastIndexOf(".");
-    if (lastDot !== -1) {
-      base = originalName.substring(0, lastDot);
-      ext = originalName.substring(lastDot);
-    }
-
-    let counter = 1;
-    let newName = originalName;
-    while (existingNames.includes(newName)) {
-      newName = `${base} (${counter})${ext}`;
-      counter++;
-    }
-    return newName;
-  };
-
-  const areUrlsDuplicate = (urlA: string, urlB: string): boolean => {
-    try {
-      const a = new URL(urlA);
-      const b = new URL(urlB);
-      // Clean query params and trailing slashes for reliable matching
-      const pathA = a.pathname.replace(/\/$/, "");
-      const pathB = b.pathname.replace(/\/$/, "");
-      return a.hostname === b.hostname && pathA === pathB;
-    } catch (e) {
-      return urlA.trim().toLowerCase() === urlB.trim().toLowerCase();
-    }
-  };
-
   const checkAndProcessQueue = async (queue: string[]) => {
-    const list = existingDownloads || [];
-    console.log("[DUPLICATE CHECK] list size:", list.length);
-    console.log("[DUPLICATE CHECK] list content:", list.map(item => ({ url: item.url, file_name: item.file_name })));
-    
     if (queue.length === 0) {
       onAdded();
       onClose();
@@ -143,45 +86,6 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
     }
 
     const currentUrl = queue[0];
-    const tentativeName = getTentativeFilename(currentUrl);
-    console.log("[DUPLICATE CHECK] Current URL:", currentUrl);
-    console.log("[DUPLICATE CHECK] Tentative Name:", tentativeName);
-
-    // 1. Check duplicate URL (robust comparison)
-    const duplicateUrlItem = list.find((item) => areUrlsDuplicate(item.url, currentUrl));
-    if (duplicateUrlItem) {
-      console.log("[DUPLICATE CHECK] Match found by URL:", duplicateUrlItem);
-      const suggested = getAutoRenamedFilename(duplicateUrlItem.file_name, list.map(d => d.file_name));
-      setDuplicateWarning({
-        url: currentUrl,
-        tentativeName: duplicateUrlItem.file_name,
-        suggestedName: suggested,
-        reason: "url",
-      });
-      setPendingUrls(queue);
-      return;
-    }
-
-    // 2. Check duplicate Filename (case insensitive)
-    const duplicateNameItem = list.find(
-      (item) => item.file_name.trim().toLowerCase() === tentativeName.trim().toLowerCase()
-    );
-    if (duplicateNameItem) {
-      console.log("[DUPLICATE CHECK] Match found by file name:", duplicateNameItem);
-      const suggested = getAutoRenamedFilename(tentativeName, list.map(d => d.file_name));
-      setDuplicateWarning({
-        url: currentUrl,
-        tentativeName,
-        suggestedName: suggested,
-        reason: "name",
-      });
-      setPendingUrls(queue);
-      return;
-    }
-
-    console.log("[DUPLICATE CHECK] No duplicate found. Invoking download...");
-
-    // No duplicate found, proceed immediately
     try {
       const mode = localStorage.getItem("msm_connection_mode") || "auto";
       const customVal = localStorage.getItem("msm_custom_connections");
@@ -197,38 +101,16 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
 
       checkAndProcessQueue(queue.slice(1));
     } catch (e: any) {
-      setError(e.toString());
-      setLoading(false);
+      const errStr = e.toString();
+      if (errStr.includes("COLLISION:")) {
+        // Backend handles Prompting via events, so close Add Modal and process rest of queue
+        onClose();
+        checkAndProcessQueue(queue.slice(1));
+      } else {
+        setError(errStr);
+        setLoading(false);
+      }
     }
-  };
-
-  const handleResolveRename = async () => {
-    if (!duplicateWarning) return;
-    try {
-      const mode = localStorage.getItem("msm_connection_mode") || "auto";
-      const customVal = localStorage.getItem("msm_custom_connections");
-      const customConnections = mode === "custom" && customVal ? parseInt(customVal, 10) : null;
-
-      await invoke("add_download", {
-        url: duplicateWarning.url,
-        destDir,
-        maxChunks,
-        customConnections,
-        customFilename: duplicateWarning.suggestedName,
-      });
-
-      setDuplicateWarning(null);
-      checkAndProcessQueue(pendingUrls.slice(1));
-    } catch (e: any) {
-      setError(e.toString());
-      setDuplicateWarning(null);
-      setLoading(false);
-    }
-  };
-
-  const handleResolveCancel = () => {
-    setDuplicateWarning(null);
-    checkAndProcessQueue(pendingUrls.slice(1));
   };
 
   return (
@@ -369,64 +251,6 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
           </div>
         </form>
       </div>
-
-      {duplicateWarning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 font-sans select-none text-neutral-300">
-          <div className="relative w-full max-w-sm bg-[#14141a] border border-red-500/25 rounded-lg shadow-2xl overflow-hidden flex flex-col">
-            <div className="bg-[#1b1b22] px-4 py-3 border-b border-neutral-800 flex items-center space-x-2 text-red-400 font-bold shrink-0">
-              <AlertOctagon size={14} />
-              <span className="text-xs font-bold text-neutral-100 tracking-wide">
-                Duplicate Download Warning
-              </span>
-            </div>
-
-            <div className="p-4 space-y-3 text-xs text-neutral-300">
-              <p>
-                {duplicateWarning.reason === "url" ? (
-                  <>
-                    This URL is already inside your active download queue under the filename{" "}
-                    <span className="font-bold text-indigo-400">
-                      "{duplicateWarning.tentativeName}"
-                    </span>.
-                  </>
-                ) : (
-                  <>
-                    A file with the name{" "}
-                    <span className="font-bold text-indigo-400">
-                      "{duplicateWarning.tentativeName}"
-                    </span>{" "}
-                    already exists in your active download list.
-                  </>
-                )}
-              </p>
-              <p className="text-neutral-500 text-[10px]">
-                Would you like to auto-rename this new task to{" "}
-                <span className="font-semibold text-neutral-300 font-mono">
-                  "{duplicateWarning.suggestedName}"
-                </span>{" "}
-                and download, or skip?
-              </p>
-            </div>
-
-            <div className="bg-[#16161c] px-4 py-2 border-t border-neutral-800/80 flex items-center justify-end space-x-2 shrink-0">
-              <button
-                type="button"
-                onClick={handleResolveCancel}
-                className="px-3.5 py-1.5 bg-neutral-900 border border-[#262630] hover:bg-neutral-800 text-neutral-400 rounded text-xs transition duration-150"
-              >
-                Skip / Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleResolveRename}
-                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded text-xs transition duration-150 shadow-lg shadow-indigo-600/20"
-              >
-                Rename & Download
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

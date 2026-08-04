@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { X, Play, Pause, AlertTriangle } from "lucide-react";
+import { X, Play, Pause, AlertTriangle, Copy, Check } from "lucide-react";
 import { formatBytes, formatSpeed, formatEta } from "../utils/format";
 
 interface ChunkInfo {
@@ -47,6 +47,20 @@ export const DownloadDetailsModal: React.FC<DownloadDetailsModalProps> = ({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_filePath, setFilePath] = useState(item.file_path);
   const [activeTab, setActiveTab] = useState<"status" | "limiter" | "completion">("status");
+  const [resumable, setResumable] = useState<boolean>(item.resumable !== false);
+  const [showPauseWarning, setShowPauseWarning] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyUrl = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(item.url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy URL:", err);
+    }
+  };
 
   // Window coordinates and sizes
   const [position, setPosition] = useState({ x: 100, y: 100 });
@@ -84,6 +98,7 @@ export const DownloadDetailsModal: React.FC<DownloadDetailsModalProps> = ({
     setEta(item.eta || -1);
     setFileName(item.file_name);
     setFilePath(item.file_path);
+    setResumable(item.resumable !== false);
 
     let unlistenProgress: (() => void) | null = null;
     let unlistenState: (() => void) | null = null;
@@ -191,7 +206,12 @@ export const DownloadDetailsModal: React.FC<DownloadDetailsModalProps> = ({
     e.stopPropagation();
   };
 
-  const handlePause = async () => {
+  const handlePause = async (force: boolean = false) => {
+    if (!resumable && force !== true) {
+      setShowPauseWarning(true);
+      return;
+    }
+    setShowPauseWarning(false);
     try {
       await invoke("pause_download", { id: item.id });
       setStatus("Paused");
@@ -231,7 +251,7 @@ export const DownloadDetailsModal: React.FC<DownloadDetailsModalProps> = ({
   };
 
   const percentage = totalSize > 0 ? ((downloaded / totalSize) * 100).toFixed(2) : "0.00";
-  const hasResumeCapability = chunks.length > 1 || totalSize > 0;
+  const hasResumeCapability = resumable;
 
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-black/35 backdrop-blur-[1px] pointer-events-auto">
@@ -303,8 +323,15 @@ export const DownloadDetailsModal: React.FC<DownloadDetailsModalProps> = ({
               {/* Fields Table */}
               <div className="grid grid-cols-4 gap-y-2 border border-neutral-800/60 p-3 bg-neutral-950/20 rounded-md shrink-0">
                 <span className="text-neutral-500 font-semibold">URL:</span>
-                <span className="col-span-3 text-neutral-200 truncate font-mono" title={item.url}>
-                  {item.url}
+                <span className="col-span-3 flex items-center justify-between text-neutral-200 font-mono truncate" title={item.url}>
+                  <span className="truncate pr-2">{item.url}</span>
+                  <button
+                    onClick={handleCopyUrl}
+                    className="p-1 hover:bg-neutral-800 rounded text-neutral-400 hover:text-white transition duration-150 shrink-0 focus:outline-none"
+                    title="Copy URL"
+                  >
+                    {copied ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                  </button>
                 </span>
 
                 <span className="text-neutral-500 font-semibold">Status:</span>
@@ -345,13 +372,21 @@ export const DownloadDetailsModal: React.FC<DownloadDetailsModalProps> = ({
 
               {/* Overall Progress Bar with Sliding Shimmer (IDM Style) */}
               <div className="space-y-1 shrink-0">
-                <div className="relative w-full bg-neutral-950 border border-neutral-800 rounded-md h-5 overflow-hidden p-[1px]">
+                <div className="relative w-full bg-neutral-950 border border-neutral-800/80 rounded-md h-5 overflow-hidden p-[1px]">
                   <div
-                    className="bg-indigo-600 h-full transition-all duration-300 relative overflow-hidden"
+                    className={`h-full transition-all duration-500 ease-out relative overflow-hidden rounded-md ${
+                      isCompleted
+                        ? "bg-gradient-to-r from-emerald-500 to-teal-400"
+                        : isFailed
+                        ? "bg-red-500"
+                        : isPaused
+                        ? "bg-neutral-600"
+                        : "bg-gradient-to-r from-indigo-500 to-cyan-400 shadow-[0_0_12px_rgba(99,102,241,0.4)]"
+                    }`}
                     style={{ width: `${percentage}%` }}
                   >
                     {isDownloading && (
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full animate-shimmer" style={{ animationDuration: '1.5s' }} />
+                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/35 to-transparent -translate-x-full animate-shimmer" style={{ animationDuration: '1.2s' }} />
                     )}
                   </div>
                   <div className="absolute inset-0 flex items-center justify-center text-[10px] font-mono font-bold text-white tracking-wide mix-blend-difference">
@@ -366,7 +401,11 @@ export const DownloadDetailsModal: React.FC<DownloadDetailsModalProps> = ({
                   Start positions and download progress by connections:
                 </p>
                 <div className="flex h-6 w-full bg-neutral-950 border border-neutral-800 rounded overflow-hidden p-[2px] gap-[1px]">
-                  {chunks.length > 0 ? (
+                  {!resumable ? (
+                    <div className="w-full h-full bg-amber-500/10 flex items-center justify-center text-[10px] text-amber-500 font-semibold font-mono tracking-wider">
+                      SINGLE CONNECTION MODE (NON-RESUMABLE)
+                    </div>
+                  ) : chunks.length > 0 ? (
                     chunks.map((chunk) => {
                       const total = chunk.end - chunk.start;
                       const progress = chunk.current - chunk.start;
@@ -475,7 +514,7 @@ export const DownloadDetailsModal: React.FC<DownloadDetailsModalProps> = ({
         <div className="bg-[#16161c] px-4 py-3 border-t border-neutral-800/80 flex items-center justify-end space-x-2 shrink-0">
           {isDownloading ? (
             <button
-              onClick={handlePause}
+              onClick={() => handlePause()}
               className="flex items-center space-x-1.5 px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded text-xs transition duration-150 focus:outline-none"
             >
               <Pause size={12} />
@@ -514,6 +553,45 @@ export const DownloadDetailsModal: React.FC<DownloadDetailsModalProps> = ({
           </svg>
         </div>
       </div>
+
+      {showPauseWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 font-sans select-none text-neutral-300">
+          <div className="relative w-full max-w-sm bg-[#14141a] border border-amber-500/20 rounded-xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="bg-[#1b1b22] px-4 py-3 border-b border-neutral-800 flex items-center space-x-2 text-amber-400 font-bold shrink-0">
+              <AlertTriangle size={16} />
+              <span className="text-xs font-bold text-neutral-100 tracking-wide">
+                Warning: Non-Resumable Download
+              </span>
+            </div>
+
+            <div className="p-4 space-y-2 text-xs leading-relaxed text-neutral-300">
+              <p>
+                This download <span className="text-amber-400 font-semibold">cannot be resumed</span> because the server does not support range requests.
+              </p>
+              <p className="text-neutral-400">
+                If you pause, the download progress will be completely lost and the partial file will be deleted. You will have to start downloading from the beginning.
+              </p>
+            </div>
+
+            <div className="bg-[#16161c] px-4 py-3 border-t border-neutral-800/80 flex items-center justify-end space-x-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowPauseWarning(false)}
+                className="px-4 py-2 bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-400 rounded-lg text-xs font-semibold transition duration-150"
+              >
+                Cancel / Keep Downloading
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePause(true)}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-lg text-xs transition duration-150 shadow-lg shadow-amber-600/20"
+              >
+                Pause & Discard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

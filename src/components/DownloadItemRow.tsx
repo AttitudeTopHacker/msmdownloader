@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
 import {
   Play,
   Pause,
@@ -63,6 +63,7 @@ export const DownloadItemRow: React.FC<DownloadItemRowProps> = ({
   const [filePath, setFilePath] = useState(item.file_path);
   const [showDeleteMenu, setShowDeleteMenu] = useState(false);
   const [resumable, setResumable] = useState<boolean>(item.resumable !== false);
+  const [showPauseWarning, setShowPauseWarning] = useState(false);
 
 
   const itemId = item.id;
@@ -126,7 +127,12 @@ export const DownloadItemRow: React.FC<DownloadItemRowProps> = ({
     setResumable(item.resumable !== false);
   }, [item]);
 
-  const handlePause = async () => {
+  const handlePause = async (force: boolean = false) => {
+    if (!resumable && force !== true) {
+      setShowPauseWarning(true);
+      return;
+    }
+    setShowPauseWarning(false);
     try {
       await invoke("pause_download", { id: item.id });
       setStatus("Paused");
@@ -176,9 +182,22 @@ export const DownloadItemRow: React.FC<DownloadItemRowProps> = ({
 
   const handleOpenFolder = async () => {
     try {
-      await revealItemInDir(item.file_path);
+      await revealItemInDir(filePath);
     } catch (e) {
-      console.error(e);
+      console.warn("revealItemInDir failed, trying fallback to open parent directory:", e);
+      try {
+        const lastSlash = filePath.lastIndexOf("/");
+        const lastBackslash = filePath.lastIndexOf("\\");
+        const idx = Math.max(lastSlash, lastBackslash);
+        if (idx !== -1) {
+          const parentDir = filePath.substring(0, idx);
+          await openPath(parentDir);
+        } else {
+          await openPath(filePath);
+        }
+      } catch (err) {
+        console.error("Fallback openPath failed:", err);
+      }
     }
   };
 
@@ -259,7 +278,7 @@ export const DownloadItemRow: React.FC<DownloadItemRowProps> = ({
         <div className="flex items-center space-x-1.5 shrink-0">
           {isDownloading ? (
             <button
-              onClick={handlePause}
+              onClick={() => handlePause()}
               className="p-2 bg-neutral-800 hover:bg-neutral-700 hover:text-amber-400 text-neutral-300 rounded-lg text-xs transition duration-200"
               title="Pause"
             >
@@ -470,6 +489,45 @@ export const DownloadItemRow: React.FC<DownloadItemRowProps> = ({
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {showPauseWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 font-sans select-none text-neutral-300">
+          <div className="relative w-full max-w-sm bg-[#14141a] border border-amber-500/20 rounded-xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="bg-[#1b1b22] px-4 py-3 border-b border-neutral-800 flex items-center space-x-2 text-amber-400 font-bold shrink-0">
+              <AlertTriangle size={16} />
+              <span className="text-xs font-bold text-neutral-100 tracking-wide">
+                Warning: Non-Resumable Download
+              </span>
+            </div>
+
+            <div className="p-4 space-y-2 text-xs leading-relaxed text-neutral-300">
+              <p>
+                This download <span className="text-amber-400 font-semibold">cannot be resumed</span> because the server does not support range requests.
+              </p>
+              <p className="text-neutral-400">
+                If you pause, the download progress will be completely lost and the partial file will be deleted. You will have to start downloading from the beginning.
+              </p>
+            </div>
+
+            <div className="bg-[#16161c] px-4 py-3 border-t border-neutral-800/80 flex items-center justify-end space-x-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowPauseWarning(false)}
+                className="px-4 py-2 bg-neutral-900 border border-neutral-800 hover:bg-neutral-800 text-neutral-400 rounded-lg text-xs font-semibold transition duration-150"
+              >
+                Cancel / Keep Downloading
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePause(true)}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-lg text-xs transition duration-150 shadow-lg shadow-amber-600/20"
+              >
+                Pause & Discard
+              </button>
+            </div>
           </div>
         </div>
       )}

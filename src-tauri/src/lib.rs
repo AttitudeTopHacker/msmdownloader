@@ -11,7 +11,7 @@ fn get_downloads(manager: tauri::State<'_, DownloadManager>) -> Vec<DownloadItem
 }
 
 #[tauri::command]
-fn add_download(
+async fn add_download(
     url: String,
     dest_dir: String,
     max_chunks: usize,
@@ -20,7 +20,7 @@ fn add_download(
     app: AppHandle,
     manager: tauri::State<'_, DownloadManager>,
 ) -> Result<String, String> {
-    manager.add(url, dest_dir, max_chunks, custom_connections, custom_filename, app)
+    manager.add(url, dest_dir, max_chunks, custom_connections, custom_filename, app).await
 }
 
 #[tauri::command]
@@ -56,6 +56,17 @@ fn delete_download(
     manager: tauri::State<'_, DownloadManager>,
 ) -> Result<(), String> {
     manager.delete(id, delete_file)
+}
+
+#[tauri::command]
+fn resolve_download_collision(
+    temp_id: String,
+    choice: String,
+    new_filename: Option<String>,
+    app: AppHandle,
+    manager: tauri::State<'_, DownloadManager>,
+) -> Result<(), String> {
+    manager.resolve_collision(temp_id, choice, new_filename, app)
 }
 
 #[tauri::command]
@@ -104,6 +115,7 @@ pub fn run() {
             delete_download,
             select_directory,
             set_extension_download_dir,
+            resolve_download_collision,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

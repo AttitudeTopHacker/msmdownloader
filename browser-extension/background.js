@@ -22,12 +22,19 @@ async function isMsmRunning() {
 }
 
 async function sendToMsm(url, filename, referrer) {
-  const res = await fetch(`${MSM_SERVER}/add`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, filename: filename || null, referrer: referrer || null }),
-  });
-  return res.ok;
+  try {
+    const res = await fetch(`${MSM_SERVER}/add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, filename: filename || null, referrer: referrer || null }),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (e) {
+    console.error("sendToMsm error:", e);
+  }
+  return null;
 }
 
 function shouldSkip(url) {
@@ -74,19 +81,42 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
   });
 
   // Get filename from download item
-  const filename = downloadItem.filename
+  let filename = downloadItem.filename
     ? downloadItem.filename.split("/").pop().split("\\").pop()
     : null;
 
-  // Send to MSM app
-  const ok = await sendToMsm(url, filename, downloadItem.referrer);
+  // Clean the display filename to show professional information
+  let displayInfo = filename || "";
+  if (displayInfo.includes("?")) {
+    displayInfo = displayInfo.split("?")[0];
+  }
+  try {
+    displayInfo = decodeURIComponent(displayInfo);
+  } catch {}
 
-  if (ok) {
+  // If it's empty, too long, or is a hexadecimal hash, use hostname instead
+  const isHexHash = /^[a-fA-F0-9]+$/.test(displayInfo);
+  if (!displayInfo || displayInfo.length > 50 || isHexHash) {
+    try {
+      displayInfo = `Source: ${new URL(url).hostname}`;
+    } catch {
+      displayInfo = "New Download Task";
+    }
+  }
+
+  // Send to MSM app
+  const response = await sendToMsm(url, filename, downloadItem.referrer);
+
+  if (response && response.success) {
+    let msg = `Successfully added download task:\n${displayInfo}`;
+    if (response.message && response.message.startsWith("COLLISION:")) {
+      msg = `Duplicate detected!\nCheck MSM Downloader window to resolve.`;
+    }
     chrome.notifications.create({
       type: "basic",
       iconUrl: "icons/icon48.png",
       title: "MSM Downloader",
-      message: `Added to MSM Downloader:\n${filename || url.split("/").pop() || "file"}`,
+      message: msg,
     });
   } else {
     // MSM failed — restore browser download

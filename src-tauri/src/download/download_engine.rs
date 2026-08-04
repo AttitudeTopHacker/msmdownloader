@@ -226,19 +226,57 @@ impl DownloadEngineTask {
                 }
             }
 
-            if self.custom_filename.is_none() {
+            let is_temp_name = self.custom_filename.as_ref()
+                .map(|name| !name.contains('.') || name.chars().all(|c| c.is_ascii_hexdigit()))
+                .unwrap_or(true);
+
+            if is_temp_name {
                 if let Some(filename) = server_filename {
                     if let Some(parent) = file_path.parent() {
-                        let new_file_path = parent.join(filename);
+                        let mut final_filename = filename.clone();
+                        let mut new_file_path = parent.join(&final_filename);
+
+                        let manager = self.app_handle.state::<DownloadManager>();
+                        let path_collides = |path: &Path| -> bool {
+                            if path.exists() {
+                                return true;
+                            }
+                            let downloads = manager.downloads.lock().unwrap();
+                            downloads.values().any(|item| {
+                                item.id != self.id && Path::new(&item.file_path) == path
+                            })
+                        };
+
+                        if path_collides(&new_file_path) {
+                            let stem = Path::new(&filename).file_stem()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string();
+                            let ext = Path::new(&filename).extension()
+                                .map(|e| format!(".{}", e.to_string_lossy()))
+                                .unwrap_or_default();
+                            
+                            let mut counter = 1;
+                            loop {
+                                let candidate_name = format!("{} ({}){}", stem, counter, ext);
+                                let candidate_path = parent.join(&candidate_name);
+                                if !path_collides(&candidate_path) {
+                                    new_file_path = candidate_path;
+                                    final_filename = candidate_name;
+                                    break;
+                                }
+                                counter += 1;
+                            }
+                        }
+
                         if new_file_path != file_path {
                             file_path = new_file_path;
                             
                             // Update manager state so that UI displays the correct filename
-                            let manager = self.app_handle.state::<DownloadManager>();
                             {
                                 let mut downloads = manager.downloads.lock().unwrap();
                                 if let Some(item) = downloads.get_mut(&self.id) {
-                                    item.file_name = file_path.file_name().unwrap().to_string_lossy().to_string();
+                                    item.file_name = final_filename;
                                     item.file_path = file_path.to_string_lossy().to_string();
                                 }
                             }
@@ -535,7 +573,7 @@ impl DownloadEngineTask {
                 }
                 Err(e) => {
                     eprintln!("Segment {} download failed (attempt {}/{}): {}", id, attempt, max_attempts, e);
-                    if attempt == max_attempts {
+                    if e.contains("deleted") || attempt == max_attempts {
                         let _ = progress_tx.send(SegmentEvent::Failed { id, error: e });
                         return;
                     }
@@ -583,10 +621,18 @@ impl DownloadEngineTask {
         let mut stream = res.bytes_stream();
         let mut write_pos = resume_start;
         let mut buffer = Vec::with_capacity(128 * 1024); // 128 KB write buffer
+        let mut last_existence_check = Instant::now();
 
         while let Some(chunk_result) = stream.next().await {
             if cancel_token.is_cancelled() {
                 return Ok(());
+            }
+
+            if last_existence_check.elapsed().as_secs() >= 1 {
+                last_existence_check = Instant::now();
+                if !file_path.exists() {
+                    return Err("File manually deleted from disk".to_string());
+                }
             }
 
             let bytes = chunk_result.map_err(|e| e.to_string())?;
@@ -682,6 +728,8 @@ impl DownloadEngineTask {
         // 128 KB write buffer for efficiency
         let mut write_buf: Vec<u8> = Vec::with_capacity(128 * 1024);
 
+        let mut last_existence_check = Instant::now();
+
         while let Some(chunk_result) = stream.next().await {
             if self.cancel_token.is_cancelled() {
                 // Non-resumable: drop partial file from disk — it's useless
@@ -689,6 +737,15 @@ impl DownloadEngineTask {
                 let _ = std::fs::remove_file(&file_path);
                 self.emit_state(DownloadStatus::Paused).await;
                 return Ok(());
+            }
+
+            if last_existence_check.elapsed().as_secs() >= 1 {
+                last_existence_check = Instant::now();
+                if !file_path.exists() {
+                    let err = "File manually deleted from disk".to_string();
+                    self.emit_error(err.clone()).await;
+                    return Err(err);
+                }
             }
 
             match chunk_result {
@@ -722,6 +779,13 @@ impl DownloadEngineTask {
                             item.speed = speed;
                             item.eta = eta;
                             item.status = DownloadStatus::Downloading;
+                            item.chunks = vec![ChunkInfo {
+                                id: 0,
+                                start: 0,
+                                end: total_size,
+                                current: downloaded,
+                                speed,
+                            }];
                         }
                     }
 
@@ -770,6 +834,13 @@ impl DownloadEngineTask {
             let mut downloads = manager.downloads.lock().unwrap();
             if let Some(item) = downloads.get_mut(&self.id) {
                 item.downloaded = downloaded;
+                item.chunks = vec![ChunkInfo {
+                    id: 0,
+                    start: 0,
+                    end: total_size,
+                    current: downloaded,
+                    speed: 0.0,
+                }];
             }
         }
 

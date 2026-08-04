@@ -46,7 +46,7 @@ async fn handle_add(
         None,
         body.filename,
         (*app_handle).clone(),
-    ) {
+    ).await {
         Ok(id) => (
             StatusCode::OK,
             Json(ApiResponse {
@@ -54,13 +54,25 @@ async fn handle_add(
                 message: format!("Download started: {}", id),
             }),
         ),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiResponse {
-                success: false,
-                message: e,
-            }),
-        ),
+        Err(e) => {
+            if e.starts_with("COLLISION:") {
+                (
+                    StatusCode::OK,
+                    Json(ApiResponse {
+                        success: true,
+                        message: e,
+                    }),
+                )
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ApiResponse {
+                        success: false,
+                        message: e,
+                    }),
+                )
+            }
+        }
     }
 }
 
