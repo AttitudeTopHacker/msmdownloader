@@ -20,7 +20,7 @@ import { AddDownloadModal } from "./components/AddDownloadModal";
 import { DownloadItemRow } from "./components/DownloadItemRow";
 import { SettingsModal } from "./components/SettingsModal";
 import { CollisionDialog, CollisionData } from "./components/CollisionDialog";
-import { formatSpeed } from "./utils/format";
+import { formatSpeed, formatBytes } from "./utils/format";
 
 type Tab = "all" | "downloading" | "completed" | "paused" | "failed";
 
@@ -32,6 +32,47 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [globalSpeed, setGlobalSpeed] = useState(0);
   const [collisionData, setCollisionData] = useState<CollisionData | null>(null);
+
+  const [downloadDir, setDownloadDir] = useState(() => {
+    return localStorage.getItem("msm_download_dir") || "/home/salman/Downloads";
+  });
+  const [diskInfo, setDiskInfo] = useState<{
+    name: string;
+    mount_point: string;
+    total_space: number;
+    available_space: number;
+  } | null>(null);
+
+  const fetchDiskInfo = useCallback(async (dirPath: string) => {
+    try {
+      const info = await invoke<any>("get_disk_info", { dir: dirPath });
+      setDiskInfo(info);
+    } catch (e) {
+      console.error("Failed to get disk info:", e);
+      setDiskInfo(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDiskInfo(downloadDir);
+
+    const handleDirChange = () => {
+      const updated = localStorage.getItem("msm_download_dir") || "/home/salman/Downloads";
+      setDownloadDir(updated);
+      fetchDiskInfo(updated);
+    };
+
+    window.addEventListener("msm_download_dir_changed", handleDirChange);
+    
+    const interval = setInterval(() => {
+      fetchDiskInfo(localStorage.getItem("msm_download_dir") || "/home/salman/Downloads");
+    }, 10000);
+
+    return () => {
+      window.removeEventListener("msm_download_dir_changed", handleDirChange);
+      clearInterval(interval);
+    };
+  }, [downloadDir, fetchDiskInfo]);
 
   const [connectionMode, setConnectionMode] = useState<"auto" | "custom">(() => {
     return (localStorage.getItem("msm_connection_mode") as "auto" | "custom") || "auto";
@@ -268,23 +309,39 @@ export default function App() {
 
         {/* Sidebar Footer Info */}
         <div className="p-4 border-t border-neutral-900/40 space-y-3">
-          <div className="bg-neutral-950/60 border border-neutral-900/80 rounded-lg p-2.5 flex items-center space-x-2">
-            <HardDrive size={15} className="text-neutral-500 shrink-0" />
-            <div className="truncate">
-              <p className="text-[9px] text-neutral-500 font-semibold tracking-wide uppercase">
-                Disk Pipeline
-              </p>
-              <p className="text-[10px] text-neutral-300 font-bold truncate">
-                Zero-Merge Mapped
-              </p>
+          <div className="bg-neutral-950/60 border border-neutral-900/80 rounded-lg p-2.5 space-y-2 select-none">
+            <div className="flex items-center space-x-2">
+              <HardDrive size={15} className="text-indigo-400 shrink-0" />
+              <div className="truncate flex-1">
+                <p className="text-[9px] text-neutral-500 font-semibold tracking-wide uppercase">
+                  Disk Pipeline
+                </p>
+                <p className="text-[10px] text-neutral-200 font-bold truncate" title={diskInfo ? `${diskInfo.name} (${diskInfo.mount_point})` : "Zero-Merge Mapped"}>
+                  {diskInfo ? `${diskInfo.name} (${diskInfo.mount_point})` : "Zero-Merge Mapped"}
+                </p>
+              </div>
             </div>
+            {diskInfo && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-[9px] text-neutral-400 font-mono">
+                  <span>{formatBytes(diskInfo.available_space)} Free</span>
+                  <span>{formatBytes(diskInfo.total_space)} Total</span>
+                </div>
+                <div className="w-full bg-neutral-900 rounded-full h-1 overflow-hidden">
+                  <div
+                    style={{ width: `${Math.min(100, Math.max(0, ((diskInfo.total_space - diskInfo.available_space) / diskInfo.total_space) * 100))}%` }}
+                    className="bg-indigo-500 h-full rounded-full transition-all duration-500"
+                  ></div>
+                </div>
+              </div>
+            )}
           </div>
-          <div className="flex items-center justify-between text-[10px] text-neutral-500 px-1 font-mono">
+          <div className="flex items-center justify-between text-[10px] px-1 font-mono">
             <span className="flex items-center space-x-1">
               <Shield size={10} className="text-emerald-500" />
-              <span>TLS V1.3</span>
+              <span className="text-emerald-400 font-bold">MSM.MOVIN</span>
             </span>
-            <span>V2.0.0</span>
+            <span className="text-neutral-400 font-bold">MSM ORG</span>
           </div>
         </div>
       </aside>

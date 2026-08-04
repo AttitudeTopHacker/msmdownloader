@@ -76,6 +76,54 @@ fn select_directory() -> Option<String> {
         .map(|path| path.to_string_lossy().to_string())
 }
 
+#[derive(serde::Serialize)]
+struct DiskInfo {
+    name: String,
+    mount_point: String,
+    total_space: u64,
+    available_space: u64,
+}
+
+#[tauri::command]
+fn get_disk_info(dir: String) -> Result<DiskInfo, String> {
+    use sysinfo::Disks;
+    let disks = Disks::new_with_refreshed_list();
+
+    let target_path = std::path::Path::new(&dir);
+    
+    let mut best_match: Option<&sysinfo::Disk> = None;
+    let mut best_match_len = 0;
+
+    for disk in &disks {
+        let mount_path = disk.mount_point();
+        if target_path.starts_with(mount_path) {
+            let len = mount_path.as_os_str().len();
+            if len > best_match_len {
+                best_match_len = len;
+                best_match = Some(disk);
+            }
+        }
+    }
+
+    if let Some(disk) = best_match {
+        let name = if disk.name().is_empty() {
+            disk.mount_point().to_string_lossy().to_string()
+        } else {
+            disk.name().to_string_lossy().to_string()
+        };
+
+        Ok(DiskInfo {
+            name,
+            mount_point: disk.mount_point().to_string_lossy().to_string(),
+            total_space: disk.total_space(),
+            available_space: disk.available_space(),
+        })
+    } else {
+        Err("No matching disk found".to_string())
+    }
+}
+
+
 /// Called by frontend to tell the backend which folder to use for extension-triggered downloads
 #[tauri::command]
 fn set_extension_download_dir(
@@ -125,6 +173,7 @@ pub fn run() {
             select_directory,
             set_extension_download_dir,
             resolve_download_collision,
+            get_disk_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

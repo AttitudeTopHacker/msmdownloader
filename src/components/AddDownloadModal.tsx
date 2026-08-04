@@ -23,9 +23,10 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
 
   // Set default download folder on mount (like standard Downloads folder)
   useEffect(() => {
-    const fetchDefaultDir = async () => {
+    const fetchDefaultDir = () => {
       try {
-        setDestDir("/home/salman/Downloads");
+        const saved = localStorage.getItem("msm_download_dir") || "/home/salman/Downloads";
+        setDestDir(saved);
       } catch (e) {
         console.error(e);
       }
@@ -47,6 +48,8 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
       const selected = await invoke<string | null>("select_directory");
       if (selected) {
         setDestDir(selected);
+        localStorage.setItem("msm_download_dir", selected);
+        window.dispatchEvent(new Event("msm_download_dir_changed"));
       }
     } catch (e) {
       console.error("Browse folder error:", e);
