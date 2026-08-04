@@ -92,6 +92,15 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let handle = app.handle().clone();
+            
+            // Set window icon explicitly for taskbar compatibility on Linux/X11
+            if let Some(window) = app.get_webview_window("main") {
+                let icon_bytes = include_bytes!("../icons/icon.png");
+                if let Ok(img) = tauri::image::Image::from_bytes(icon_bytes) {
+                    let _ = window.set_icon(img);
+                }
+            }
+
             let manager = DownloadManager::new(&handle);
             app.manage(manager);
 
