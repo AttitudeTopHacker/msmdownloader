@@ -1,9 +1,9 @@
 [package]
 name = "msmdownloader"
 version = "1.0.8"
-description = "Ultra High-Speed Download Manager"
-authors = ["you"]
-edition = "2021"
+description = "Ultra Speed Download Manager"
+authors = ["msm.movin"]
+edition = "2026"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
