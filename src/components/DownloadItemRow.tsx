@@ -65,6 +65,32 @@ export const DownloadItemRow: React.FC<DownloadItemRowProps> = ({
   const [resumable, setResumable] = useState<boolean>(item.resumable !== false);
   const [showPauseWarning, setShowPauseWarning] = useState(false);
 
+  const handleOpenDetails = async () => {
+    try {
+      const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+      const windowLabel = `details-${item.id}`;
+      
+      const existing = await WebviewWindow.getByLabel(windowLabel);
+      if (existing) {
+        await existing.setFocus();
+        return;
+      }
+
+      new WebviewWindow(windowLabel, {
+        url: `index.html?window=details&id=${item.id}`,
+        title: `Download status - ${fileName}`,
+        width: 590,
+        height: 540,
+        resizable: true,
+        decorations: true,
+        focus: true,
+      });
+    } catch (e) {
+      console.error("Failed to open Tauri window, falling back to overlay:", e);
+      setIsDetailsOpen(true);
+    }
+  };
+
 
   const itemId = item.id;
 
@@ -250,7 +276,7 @@ export const DownloadItemRow: React.FC<DownloadItemRowProps> = ({
 
   return (
     <div
-      onDoubleClick={() => setIsDetailsOpen(true)}
+      onDoubleClick={handleOpenDetails}
       className="bg-neutral-900/60 border border-neutral-800/40 hover:border-indigo-500/20 hover:bg-neutral-900/80 rounded-xl p-4 transition-all duration-300 shadow-lg shadow-black/5 flex flex-col space-y-3 cursor-pointer"
       title="Double-click to view connection details"
     >

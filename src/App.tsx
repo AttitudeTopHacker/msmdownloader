@@ -23,10 +23,37 @@ import { DownloadItemRow } from "./components/DownloadItemRow";
 import { SettingsModal } from "./components/SettingsModal";
 import { CollisionDialog, CollisionData } from "./components/CollisionDialog";
 import { formatSpeed, formatBytes } from "./utils/format";
+import { DownloadDetailsModal } from "./components/DownloadDetailsModal";
 
 type Tab = "all" | "downloading" | "completed" | "paused" | "failed";
 
 export default function App() {
+  // Query parameters check for separate details window routing
+  const queryParams = new URLSearchParams(window.location.search);
+  const isDetailsWindow = queryParams.get("window") === "details";
+  const detailsDownloadId = queryParams.get("id");
+
+  const [detailsItem, setDetailsItem] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (isDetailsWindow && detailsDownloadId) {
+      const loadItem = async () => {
+        try {
+          const list = await invoke<any[]>("get_downloads");
+          const found = list.find((d) => d.id === detailsDownloadId);
+          if (found) {
+            setDetailsItem(found);
+          }
+        } catch (e) {
+          console.error("Failed to load details download item:", e);
+        }
+      };
+      loadItem();
+      const interval = setInterval(loadItem, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [isDetailsWindow, detailsDownloadId]);
+
   const [showSplash, setShowSplash] = useState(true);
   const [user, setUser] = useState<{ email: string; name: string; profile_pic: string; mobile?: string } | null>(() => {
     const saved = localStorage.getItem("msm_user_session");
@@ -206,6 +233,41 @@ export default function App() {
   };
 
   const stats = getStats();
+
+  if (isDetailsWindow) {
+    if (!detailsItem) {
+      return (
+        <div className="min-h-screen bg-[#0c0c0e] flex flex-col items-center justify-center text-xs text-neutral-400 font-sans">
+          Loading download details...
+        </div>
+      );
+    }
+    return (
+      <div className="min-h-screen bg-[#0c0c0e] relative overflow-hidden font-sans">
+        <DownloadDetailsModal
+          isOpen={true}
+          item={detailsItem}
+          onClose={async () => {
+            try {
+              const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+              await getCurrentWebviewWindow().close();
+            } catch (err) {
+              console.error(err);
+            }
+          }}
+          onRefresh={async () => {
+            try {
+              const list = await invoke<any[]>("get_downloads");
+              const found = list.find((d) => d.id === detailsDownloadId);
+              if (found) setDetailsItem(found);
+            } catch (e) {
+              console.error(e);
+            }
+          }}
+        />
+      </div>
+    );
+  }
 
   if (showSplash) {
     return <Splash onComplete={() => setShowSplash(false)} />;
