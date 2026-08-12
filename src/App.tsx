@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { Login } from "./components/Login";
+import { ProfileModal } from "./components/ProfileModal";
 import {
   Download,
   Plus,
@@ -26,6 +28,11 @@ type Tab = "all" | "downloading" | "completed" | "paused" | "failed";
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
+  const [user, setUser] = useState<{ email: string; name: string; profile_pic: string; mobile?: string } | null>(() => {
+    const saved = localStorage.getItem("msm_user_session");
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [downloads, setDownloads] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<Tab>("all");
   const [showAddModal, setShowAddModal] = useState(false);
@@ -73,6 +80,16 @@ export default function App() {
       clearInterval(interval);
     };
   }, [downloadDir, fetchDiskInfo]);
+
+  // Synchronize dynamic extension download directory with Rust backend
+  useEffect(() => {
+    invoke("set_extension_download_dir", { dir: downloadDir }).catch(console.error);
+  }, [downloadDir]);
+
+  // Synchronize active user session with Rust backend
+  useEffect(() => {
+    invoke("set_active_user_session", { email: user ? user.email : null }).catch(console.error);
+  }, [user]);
 
   const [connectionMode, setConnectionMode] = useState<"auto" | "custom">(() => {
     return (localStorage.getItem("msm_connection_mode") as "auto" | "custom") || "auto";
@@ -194,6 +211,13 @@ export default function App() {
     return <Splash onComplete={() => setShowSplash(false)} />;
   }
 
+  if (!user) {
+    return <Login onLoginSuccess={(session) => {
+      setUser(session);
+      localStorage.setItem("msm_user_session", JSON.stringify(session));
+    }} />;
+  }
+
   return (
     <div className="flex h-screen bg-[#07070a] text-neutral-200 select-none overflow-hidden font-sans">
       {/* Sidebar */}
@@ -214,8 +238,34 @@ export default function App() {
             </div>
           </div>
 
+          {/* User Profile Card */}
+          <div 
+            onClick={() => setIsProfileOpen(true)}
+            className="mx-3 mt-4 p-3 bg-neutral-950/40 hover:bg-neutral-900/50 border border-neutral-900/80 hover:border-neutral-800 rounded-xl flex items-center space-x-3 cursor-pointer transition duration-200 group"
+          >
+            {user.profile_pic ? (
+              <img 
+                src={user.profile_pic} 
+                alt="Avatar" 
+                className="w-9 h-9 rounded-full object-cover border border-neutral-850 group-hover:border-indigo-500/50 transition"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-xs font-bold text-white border border-neutral-850">
+                {user.name.slice(0, 2).toUpperCase()}
+              </div>
+            )}
+            <div className="truncate flex-1">
+              <p className="text-[11px] font-bold text-neutral-200 group-hover:text-white transition truncate">
+                {user.name}
+              </p>
+              <p className="text-[9px] text-neutral-500 truncate font-mono">
+                {user.email}
+              </p>
+            </div>
+          </div>
+
           {/* Navigation Filters */}
-          <nav className="mt-6 px-3 space-y-1">
+          <nav className="mt-4 px-3 space-y-1">
             <button
               onClick={() => setActiveTab("all")}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold tracking-wide transition duration-200 ${
@@ -440,6 +490,20 @@ export default function App() {
           onResolve={handleResolveCollision}
         />
       )}
+
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        user={user}
+        onUpdate={(updated) => {
+          setUser(updated);
+          localStorage.setItem("msm_user_session", JSON.stringify(updated));
+        }}
+        onLogout={() => {
+          setUser(null);
+          localStorage.removeItem("msm_user_session");
+        }}
+      />
     </div>
   );
 }

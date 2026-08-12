@@ -9,6 +9,13 @@ use tokio_util::sync::CancellationToken;
 use super::types::{DownloadItem, DownloadStatus};
 use super::download_engine::DownloadEngineTask;
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct UserProfile {
+    pub email: String,
+    pub name: String,
+    pub mobile: String,
+    pub profile_pic: String,
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PendingCollision {
@@ -17,14 +24,19 @@ pub struct PendingCollision {
     pub max_chunks: usize,
     pub custom_connections: Option<usize>,
     pub custom_filename: Option<String>,
+    pub referrer: Option<String>,
+    pub user_email: Option<String>,
 }
 
 pub struct DownloadManager {
     pub downloads: Arc<Mutex<HashMap<String, DownloadItem>>>,
     pub cancel_tokens: Mutex<HashMap<String, CancellationToken>>,
     pub db_path: PathBuf,
+    pub profile_path: PathBuf,
     pub db_client: Arc<tokio::sync::Mutex<Option<tokio_postgres::Client>>>,
     pub pending_collisions: Mutex<HashMap<String, PendingCollision>>,
+    pub download_dir: Arc<Mutex<String>>,
+    pub active_user_email: Arc<Mutex<Option<String>>>,
 }
 
 async fn connect_db() -> Result<tokio_postgres::Client, String> {
@@ -52,26 +64,60 @@ async fn connect_db() -> Result<tokio_postgres::Client, String> {
 
 impl DownloadManager {
     pub fn new(app_handle: &AppHandle) -> Self {
-        let mut db_path = app_handle
+        let mut tauri_dir = app_handle
             .path()
             .app_data_dir()
             .unwrap_or_else(|_| PathBuf::from("."));
             
-        if !db_path.exists() {
-            let _ = std::fs::create_dir_all(&db_path);
+        if !tauri_dir.exists() {
+            let _ = std::fs::create_dir_all(&tauri_dir);
         }
+        
+        let mut db_path = tauri_dir.clone();
         db_path.push("downloads.json");
+
+        let mut profile_path = tauri_dir.clone();
+        profile_path.push("profile.json");
 
         let downloads = Arc::new(Mutex::new(Self::load_downloads(&db_path).unwrap_or_default()));
         let db_client = Arc::new(tokio::sync::Mutex::new(None));
+        
+        let download_dir = Arc::new(Mutex::new(
+            dirs::download_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .to_string_lossy()
+                .to_string()
+        ));
+        
+        let active_user_email: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
         // Spawn background database worker for connection and sync
         let client_clone = db_client.clone();
         let downloads_clone = downloads.clone();
         let db_path_clone = db_path.clone();
+        let active_user_email_clone = active_user_email.clone();
 
         tauri::async_runtime::spawn(async move {
             loop {
+                // Check if current user is local_user or none
+                let is_local = {
+                    let email_guard = active_user_email_clone.lock().unwrap();
+                    email_guard.as_ref()
+                        .map(|e| e == "local_user" || e.starts_with("guest"))
+                        .unwrap_or(true)
+                };
+
+                if is_local {
+                    // Local-only mode: Disconnect if connected
+                    let mut guard = client_clone.lock().await;
+                    if guard.is_some() {
+                        println!("Active user is local. Disconnecting from Supabase...");
+                        *guard = None;
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+
                 let need_connect = {
                     let guard = client_clone.lock().await;
                     guard.is_none()
@@ -83,75 +129,107 @@ impl DownloadManager {
                         Ok(client) => {
                             println!("Successfully connected to Supabase Database!");
                             
-                            // Initialize table schema
-                            let init_query = "
-                                CREATE TABLE IF NOT EXISTS downloads (
+                            // Initialize table schema and columns
+                            let queries = vec![
+                                "CREATE TABLE IF NOT EXISTS downloads (
                                     id TEXT PRIMARY KEY,
                                     url TEXT NOT NULL,
                                     file_name TEXT NOT NULL,
                                     file_path TEXT NOT NULL,
                                     total_size BIGINT NOT NULL,
                                     downloaded BIGINT NOT NULL,
-                                    status TEXT NOT NULL
-                                );
-                            ";
-                            if let Err(e) = client.execute(init_query, &[]).await {
-                                eprintln!("Failed to initialize Supabase table: {}", e);
-                            } else {
-                                // Load records from Supabase and merge
-                                match client.query("SELECT id, url, file_name, file_path, total_size, downloaded, status FROM downloads", &[]).await {
-                                    Ok(rows) => {
-                                        let mut downloads_map = downloads_clone.lock().unwrap();
-                                        for row in rows {
-                                            let id: String = row.get(0);
-                                            let url: String = row.get(1);
-                                            let file_name: String = row.get(2);
-                                            let file_path: String = row.get(3);
-                                            let total_size: i64 = row.get(4);
-                                            let downloaded: i64 = row.get(5);
-                                            let status_str: String = row.get(6);
+                                    status TEXT NOT NULL,
+                                    user_email TEXT,
+                                    referrer TEXT
+                                );",
+                                "ALTER TABLE downloads ADD COLUMN IF NOT EXISTS user_email TEXT;",
+                                "ALTER TABLE downloads ADD COLUMN IF NOT EXISTS referrer TEXT;",
+                                "CREATE TABLE IF NOT EXISTS profiles (
+                                    email TEXT PRIMARY KEY,
+                                    name TEXT,
+                                    mobile TEXT,
+                                    profile_pic TEXT
+                                );"
+                            ];
 
-                                            let status = match status_str.as_str() {
-                                                "Completed" => DownloadStatus::Completed,
-                                                "Paused" => DownloadStatus::Paused,
-                                                s if s.starts_with("Failed:") => {
-                                                    DownloadStatus::Failed(s.replace("Failed: ", ""))
+                            let mut migration_ok = true;
+                            for q in queries {
+                                if let Err(e) = client.execute(q, &[]).await {
+                                    eprintln!("Failed to execute schema query: {}. Query: {}", e, q);
+                                    migration_ok = false;
+                                    break;
+                                }
+                            }
+
+                            if migration_ok {
+                                // Set the client
+                                {
+                                    let mut guard = client_clone.lock().await;
+                                    *guard = Some(client);
+                                }
+
+                                // Check if there is already an active user logged in, if so fetch their downloads
+                                let active_email = {
+                                    let guard = active_user_email_clone.lock().unwrap();
+                                    guard.clone()
+                                };
+                                
+                                if let Some(email) = active_email {
+                                    if email != "local_user" && !email.starts_with("guest") {
+                                        println!("Database connected! Fetching downloads for logged-in user: {}", email);
+                                        let fetch_query = "SELECT id, url, file_name, file_path, total_size, downloaded, status, referrer FROM downloads WHERE user_email = $1";
+                                        let guard = client_clone.lock().await;
+                                        if let Some(ref active_client) = *guard {
+                                            if let Ok(rows) = active_client.query(fetch_query, &[&email]).await {
+                                                let mut downloads_map = downloads_clone.lock().unwrap();
+                                                for row in rows {
+                                                    let id: String = row.get(0);
+                                                    let url: String = row.get(1);
+                                                    let file_name: String = row.get(2);
+                                                    let file_path: String = row.get(3);
+                                                    let total_size: i64 = row.get(4);
+                                                    let downloaded: i64 = row.get(5);
+                                                    let status_str: String = row.get(6);
+                                                    let referrer: Option<String> = row.get(7);
+
+                                                    let status = match status_str.as_str() {
+                                                        "Completed" => DownloadStatus::Completed,
+                                                        "Paused" => DownloadStatus::Paused,
+                                                        s if s.starts_with("Failed:") => {
+                                                            DownloadStatus::Failed(s.replace("Failed: ", ""))
+                                                        }
+                                                        _ => DownloadStatus::Paused,
+                                                    };
+
+                                                    downloads_map.entry(id.clone()).or_insert(DownloadItem {
+                                                        id,
+                                                        url,
+                                                        file_name,
+                                                        file_path,
+                                                        total_size: total_size as u64,
+                                                        downloaded: downloaded as u64,
+                                                        status,
+                                                        speed: 0.0,
+                                                        eta: -1.0,
+                                                        chunks: Vec::new(),
+                                                        resumable: true,
+                                                        referrer,
+                                                        user_email: Some(email.clone()),
+                                                    });
                                                 }
-                                                _ => DownloadStatus::Paused,
-                                            };
 
-                                            downloads_map.entry(id.clone()).or_insert(DownloadItem {
-                                                id,
-                                                url,
-                                                file_name,
-                                                file_path,
-                                                total_size: total_size as u64,
-                                                downloaded: downloaded as u64,
-                                                status,
-                                                speed: 0.0,
-                                                eta: -1.0,
-                                                chunks: Vec::new(),
-                                                resumable: true,
-                                            });
-                                        }
-
-                                        // Persist merged cache locally
-                                        let list: Vec<DownloadItem> = downloads_map.values().cloned().collect();
-                                        if let Ok(content) = serde_json::to_string_pretty(&list) {
-                                            if let Ok(mut file) = File::create(&db_path_clone) {
-                                                let _ = file.write_all(content.as_bytes());
+                                                // Save merged cache locally
+                                                let list: Vec<DownloadItem> = downloads_map.values().cloned().collect();
+                                                if let Ok(content) = serde_json::to_string_pretty(&list) {
+                                                    if let Ok(mut file) = File::create(&db_path_clone) {
+                                                        let _ = file.write_all(content.as_bytes());
+                                                    }
+                                                }
                                             }
                                         }
                                     }
-                                    Err(e) => {
-                                        eprintln!("Failed to load downloads from Supabase: {}", e);
-                                    }
                                 }
                             }
-                            
-                            // Set the client
-                            let mut guard = client_clone.lock().await;
-                            *guard = Some(client);
                         }
                         Err(e) => {
                             eprintln!("Supabase connection failed: {}. Retrying in 15 seconds.", e);
@@ -167,8 +245,11 @@ impl DownloadManager {
             downloads,
             cancel_tokens: Mutex::new(HashMap::new()),
             db_path,
+            profile_path,
             db_client,
             pending_collisions: Mutex::new(HashMap::new()),
+            download_dir,
+            active_user_email,
         }
     }
 
@@ -210,7 +291,18 @@ impl DownloadManager {
         downloads.values().cloned().collect()
     }
 
-    pub fn add_direct(&self, url: String, dest_dir: String, max_chunks: usize, custom_connections: Option<usize>, custom_filename: Option<String>, auto_rename: bool, app_handle: AppHandle) -> Result<String, String> {
+    pub fn add_direct(
+        &self,
+        url: String,
+        dest_dir: String,
+        max_chunks: usize,
+        custom_connections: Option<usize>,
+        custom_filename: Option<String>,
+        auto_rename: bool,
+        referrer: Option<String>,
+        user_email: Option<String>,
+        app_handle: AppHandle,
+    ) -> Result<String, String> {
         let file_name = if let Some(custom) = custom_filename.clone() {
             custom
         } else {
@@ -270,6 +362,8 @@ impl DownloadManager {
             eta: -1.0,
             chunks: Vec::new(),
             resumable: true,
+            referrer,
+            user_email,
         };
 
         {
@@ -284,7 +378,17 @@ impl DownloadManager {
         Ok(id)
     }
 
-    pub async fn add(&self, url: String, dest_dir: String, max_chunks: usize, custom_connections: Option<usize>, custom_filename: Option<String>, app_handle: AppHandle) -> Result<String, String> {
+    pub async fn add(
+        &self,
+        url: String,
+        dest_dir: String,
+        max_chunks: usize,
+        custom_connections: Option<usize>,
+        custom_filename: Option<String>,
+        referrer: Option<String>,
+        user_email: Option<String>,
+        app_handle: AppHandle,
+    ) -> Result<String, String> {
         let mut file_name = if let Some(custom) = custom_filename.clone() {
             custom
         } else {
@@ -369,6 +473,8 @@ impl DownloadManager {
                     max_chunks,
                     custom_connections,
                     custom_filename: Some(file_name.clone()),
+                    referrer: referrer.clone(),
+                    user_email: user_email.clone(),
                 });
             }
 
@@ -407,7 +513,7 @@ impl DownloadManager {
         }
 
         // No collision: proceed direct
-        self.add_direct(url, dest_dir, max_chunks, custom_connections, Some(file_name), false, app_handle)
+        self.add_direct(url, dest_dir, max_chunks, custom_connections, Some(file_name), false, referrer, user_email, app_handle)
     }
 
     pub fn resolve_collision(&self, temp_id: String, choice: String, new_filename: Option<String>, app_handle: AppHandle) -> Result<(), String> {
@@ -419,11 +525,11 @@ impl DownloadManager {
         match choice.as_str() {
             "numbered" => {
                 let filename = new_filename.or(pending.custom_filename);
-                self.add_direct(pending.url, pending.dest_dir, pending.max_chunks, pending.custom_connections, filename, true, app_handle)?;
+                self.add_direct(pending.url, pending.dest_dir, pending.max_chunks, pending.custom_connections, filename, true, pending.referrer, pending.user_email, app_handle)?;
             }
             "overwrite" => {
                 let filename = new_filename.or(pending.custom_filename);
-                self.add_direct(pending.url, pending.dest_dir, pending.max_chunks, pending.custom_connections, filename, false, app_handle)?;
+                self.add_direct(pending.url, pending.dest_dir, pending.max_chunks, pending.custom_connections, filename, false, pending.referrer, pending.user_email, app_handle)?;
             }
             "overwrite_remove_old" => {
                 let filename = new_filename.clone().or(pending.custom_filename.clone());
@@ -442,7 +548,7 @@ impl DownloadManager {
                     let _ = self.delete(id, false);
                 }
 
-                self.add_direct(pending.url, pending.dest_dir, pending.max_chunks, pending.custom_connections, filename, false, app_handle)?;
+                self.add_direct(pending.url, pending.dest_dir, pending.max_chunks, pending.custom_connections, filename, false, pending.referrer, pending.user_email, app_handle)?;
             }
             "update_link" => {
                 let filename = new_filename.or(pending.custom_filename);
@@ -469,6 +575,8 @@ impl DownloadManager {
                             item.downloaded = 0;
                             item.speed = 0.0;
                             item.eta = -1.0;
+                            item.referrer = pending.referrer.clone();
+                            item.user_email = pending.user_email.clone();
                         }
                     }
                     self.save_downloads();
@@ -500,10 +608,10 @@ impl DownloadManager {
     }
 
     pub fn start_task(&self, id: String, max_chunks: usize, custom_connections: Option<usize>, custom_filename: Option<String>, app_handle: AppHandle) -> Result<(), String> {
-        let (url, file_path) = {
+        let (url, file_path, referrer) = {
             let downloads = self.downloads.lock().unwrap();
             let item = downloads.get(&id).ok_or_else(|| "Download not found".to_string())?;
-            (item.url.clone(), PathBuf::from(&item.file_path))
+            (item.url.clone(), PathBuf::from(&item.file_path), item.referrer.clone())
         };
 
         let client = reqwest::Client::builder()
@@ -523,6 +631,7 @@ impl DownloadManager {
             max_chunks,
             custom_connections,
             custom_filename,
+            referrer,
         );
 
         let cancel_token = task.cancel_token.clone();
@@ -620,6 +729,14 @@ impl DownloadManager {
         };
 
         if let Some(item) = item {
+            if let Some(ref email) = item.user_email {
+                if email == "local_user" || email.starts_with("guest") {
+                    return; // Local-only mode: do not sync to Supabase
+                }
+            } else {
+                return; // No user: do not sync
+            }
+
             let client_clone = self.db_client.clone();
             tauri::async_runtime::spawn(async move {
                 let guard = client_clone.lock().await;
@@ -633,12 +750,14 @@ impl DownloadManager {
                     };
 
                     let query = "
-                        INSERT INTO downloads (id, url, file_name, file_path, total_size, downloaded, status)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        INSERT INTO downloads (id, url, file_name, file_path, total_size, downloaded, status, user_email, referrer)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                         ON CONFLICT (id) DO UPDATE SET
                             downloaded = EXCLUDED.downloaded,
                             total_size = EXCLUDED.total_size,
-                            status = EXCLUDED.status;
+                            status = EXCLUDED.status,
+                            user_email = EXCLUDED.user_email,
+                            referrer = EXCLUDED.referrer;
                     ";
 
                     let _ = client.execute(
@@ -651,10 +770,172 @@ impl DownloadManager {
                             &(item.total_size as i64),
                             &(item.downloaded as i64),
                             &status_str,
+                            &item.user_email,
+                            &item.referrer,
                         ]
                     ).await;
                 }
             });
+        }
+    }
+
+    pub async fn set_active_user(&self, email: Option<String>) {
+        {
+            let mut active_guard = self.active_user_email.lock().unwrap();
+            *active_guard = email.clone();
+        }
+
+        if let Some(ref email_str) = email {
+            if email_str != "local_user" && !email_str.starts_with("guest") {
+                // Logged in: load user's downloads from DB
+                self.load_user_downloads_from_db(email_str.clone()).await;
+            } else {
+                // Local/Guest mode: load downloads from local json file
+                let local_map = Self::load_downloads(&self.db_path).unwrap_or_default();
+                let mut downloads = self.downloads.lock().unwrap();
+                downloads.clear();
+                for (id, d) in local_map {
+                    downloads.insert(id, d);
+                }
+            }
+        } else {
+            // Logged out: clear local cache and db file
+            {
+                let mut downloads = self.downloads.lock().unwrap();
+                downloads.clear();
+            }
+            if self.db_path.exists() {
+                let _ = std::fs::remove_file(&self.db_path);
+            }
+        }
+    }
+
+    pub async fn load_user_downloads_from_db(&self, email: String) {
+        let client_guard = self.db_client.lock().await;
+        if let Some(ref client) = *client_guard {
+            println!("Loading downloads from Supabase for user: {}...", email);
+            let query = "SELECT id, url, file_name, file_path, total_size, downloaded, status, referrer FROM downloads WHERE user_email = $1";
+            match client.query(query, &[&email]).await {
+                Ok(rows) => {
+                    let mut downloads_map = self.downloads.lock().unwrap();
+                    downloads_map.clear(); // Clear existing local list first
+                    for row in rows {
+                        let id: String = row.get(0);
+                        let url: String = row.get(1);
+                        let file_name: String = row.get(2);
+                        let file_path: String = row.get(3);
+                        let total_size: i64 = row.get(4);
+                        let downloaded: i64 = row.get(5);
+                        let status_str: String = row.get(6);
+                        let referrer: Option<String> = row.get(7);
+
+                        let status = match status_str.as_str() {
+                            "Completed" => DownloadStatus::Completed,
+                            "Paused" => DownloadStatus::Paused,
+                            s if s.starts_with("Failed:") => {
+                                DownloadStatus::Failed(s.replace("Failed: ", ""))
+                            }
+                            _ => DownloadStatus::Paused,
+                        };
+
+                        downloads_map.insert(id.clone(), DownloadItem {
+                            id,
+                            url,
+                            file_name,
+                            file_path,
+                            total_size: total_size as u64,
+                            downloaded: downloaded as u64,
+                            status,
+                            speed: 0.0,
+                            eta: -1.0,
+                            chunks: Vec::new(),
+                            resumable: true,
+                            referrer,
+                            user_email: Some(email.clone()),
+                        });
+                    }
+
+                    // Save merged cache locally
+                    let list: Vec<DownloadItem> = downloads_map.values().cloned().collect();
+                    if let Ok(content) = serde_json::to_string_pretty(&list) {
+                        if let Ok(mut file) = File::create(&self.db_path) {
+                            let _ = file.write_all(content.as_bytes());
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to load downloads from Supabase for user {}: {}", email, e);
+                }
+            }
+        }
+    }
+
+    pub async fn save_profile(&self, email: String, name: String, mobile: String, profile_pic: String) -> Result<(), String> {
+        if email == "local_user" || email.starts_with("guest") {
+            let profile = UserProfile {
+                email,
+                name,
+                mobile,
+                profile_pic,
+            };
+            if let Ok(content) = serde_json::to_string_pretty(&profile) {
+                if let Ok(mut file) = File::create(&self.profile_path) {
+                    let _ = file.write_all(content.as_bytes());
+                }
+            }
+            return Ok(());
+        }
+
+        let client_guard = self.db_client.lock().await;
+        if let Some(ref client) = *client_guard {
+            let query = "
+                INSERT INTO profiles (email, name, mobile, profile_pic)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (email) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    mobile = EXCLUDED.mobile,
+                    profile_pic = EXCLUDED.profile_pic;
+            ";
+            client.execute(query, &[&email, &name, &mobile, &profile_pic])
+                .await
+                .map_err(|e| format!("Failed to save profile in Supabase: {}", e))?;
+            Ok(())
+        } else {
+            Err("Database not connected".to_string())
+        }
+    }
+
+    pub async fn get_profile(&self, email: String) -> Result<Option<UserProfile>, String> {
+        if email == "local_user" || email.starts_with("guest") {
+            if self.profile_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&self.profile_path) {
+                    if let Ok(profile) = serde_json::from_str::<UserProfile>(&content) {
+                        return Ok(Some(profile));
+                    }
+                }
+            }
+            return Ok(None);
+        }
+
+        let client_guard = self.db_client.lock().await;
+        if let Some(ref client) = *client_guard {
+            let query = "SELECT email, name, mobile, profile_pic FROM profiles WHERE email = $1";
+            let rows = client.query(query, &[&email])
+                .await
+                .map_err(|e| format!("Failed to query profile: {}", e))?;
+            
+            if let Some(row) = rows.first() {
+                Ok(Some(UserProfile {
+                    email: row.get(0),
+                    name: row.get(1),
+                    mobile: row.get(2),
+                    profile_pic: row.get(3),
+                }))
+            } else {
+                Ok(None)
+            }
+        } else {
+            Err("Database not connected".to_string())
         }
     }
 }

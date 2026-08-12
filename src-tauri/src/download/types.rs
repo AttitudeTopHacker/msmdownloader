@@ -24,6 +24,10 @@ pub struct DownloadItem {
     pub chunks: Vec<ChunkInfo>,
     #[serde(default = "default_true")]
     pub resumable: bool,
+    #[serde(default)]
+    pub referrer: Option<String>,
+    #[serde(default)]
+    pub user_email: Option<String>,
 }
 
 fn default_true() -> bool { true }

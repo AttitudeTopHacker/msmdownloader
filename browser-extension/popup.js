@@ -17,9 +17,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         signal: AbortSignal.timeout(1000)
       });
       if (res.ok) {
+        const data = await res.json();
         statusCard.className = "status-card status-connected";
         statusDot.className = "status-dot dot-connected";
         statusText.textContent = "MSM App Connected";
+        if (data.download_dir) {
+          folderInput.value = data.download_dir;
+        }
       } else {
         throw new Error();
       }
@@ -27,6 +31,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       statusCard.className = "status-card status-disconnected";
       statusDot.className = "status-dot dot-disconnected";
       statusText.textContent = "MSM App Disconnected (Open the App)";
+      folderInput.value = "";
     }
   }
 
@@ -44,7 +49,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const enabled = enableToggle.checked;
     const skipExts = skipExtsInput.value.trim().toLowerCase();
 
-    chrome.storage.local.set({ enabled, skipExts }, () => {
+    chrome.storage.local.set({ enabled, skipExts, warning_dismissed: false }, () => {
       saveBtn.textContent = "Settings Saved!";
       saveBtn.style.background = "#10b981";
       setTimeout(() => {

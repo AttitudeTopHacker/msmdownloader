@@ -20,7 +20,11 @@ async fn add_download(
     app: AppHandle,
     manager: tauri::State<'_, DownloadManager>,
 ) -> Result<String, String> {
-    manager.add(url, dest_dir, max_chunks, custom_connections, custom_filename, app).await
+    let user_email = {
+        let guard = manager.active_user_email.lock().unwrap();
+        guard.clone()
+    };
+    manager.add(url, dest_dir, max_chunks, custom_connections, custom_filename, None, user_email, app).await
 }
 
 #[tauri::command]
@@ -76,6 +80,14 @@ fn select_directory() -> Option<String> {
         .map(|path| path.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+fn select_image_file() -> Option<String> {
+    rfd::FileDialog::new()
+        .add_filter("Images", &["png", "jpg", "jpeg", "webp", "gif"])
+        .pick_file()
+        .map(|path| path.to_string_lossy().to_string())
+}
+
 #[derive(serde::Serialize)]
 struct DiskInfo {
     name: String,
@@ -123,15 +135,46 @@ fn get_disk_info(dir: String) -> Result<DiskInfo, String> {
     }
 }
 
-
 /// Called by frontend to tell the backend which folder to use for extension-triggered downloads
 #[tauri::command]
 fn set_extension_download_dir(
     dir: String,
     app: AppHandle,
+    manager: tauri::State<'_, DownloadManager>,
 ) {
-    // Re-start server with updated dir — for now emit an event the server can consume
+    {
+        let mut guard = manager.download_dir.lock().unwrap();
+        *guard = dir.clone();
+    }
     app.emit("extension-dir-changed", dir).ok();
+}
+
+#[tauri::command]
+async fn set_active_user_session(
+    email: Option<String>,
+    manager: tauri::State<'_, DownloadManager>,
+) -> Result<(), String> {
+    manager.set_active_user(email).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn save_user_profile(
+    email: String,
+    name: String,
+    mobile: String,
+    profile_pic: String,
+    manager: tauri::State<'_, DownloadManager>,
+) -> Result<(), String> {
+    manager.save_profile(email, name, mobile, profile_pic).await
+}
+
+#[tauri::command]
+async fn get_user_profile(
+    email: String,
+    manager: tauri::State<'_, DownloadManager>,
+) -> Result<Option<download::manager::UserProfile>, String> {
+    manager.get_profile(email).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -174,6 +217,10 @@ pub fn run() {
             set_extension_download_dir,
             resolve_download_collision,
             get_disk_info,
+            set_active_user_session,
+            save_user_profile,
+            get_user_profile,
+            select_image_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

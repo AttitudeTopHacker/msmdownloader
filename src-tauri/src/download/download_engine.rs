@@ -40,6 +40,7 @@ pub struct DownloadEngineTask {
     pub custom_connection_count: Option<usize>,
     pub custom_filename: Option<String>,
     pub cancel_token: CancellationToken,
+    pub referrer: Option<String>,
 }
 
 enum SegmentEvent {
@@ -88,6 +89,7 @@ impl DownloadEngineTask {
         max_connections: usize,
         custom_connection_count: Option<usize>,
         custom_filename: Option<String>,
+        referrer: Option<String>,
     ) -> Self {
         Self {
             id,
@@ -99,6 +101,7 @@ impl DownloadEngineTask {
             custom_connection_count,
             custom_filename,
             cancel_token: CancellationToken::new(),
+            referrer,
         }
     }
 
@@ -168,7 +171,11 @@ impl DownloadEngineTask {
             file_path = PathBuf::from(state.file_path);
             
             // Resolve final URL (just in case CDN redirects expired)
-            match client.get(&self.url).send().await {
+            let mut req = client.get(&self.url);
+            if let Some(ref ref_url) = self.referrer {
+                req = req.header(reqwest::header::REFERER, ref_url);
+            }
+            match req.send().await {
                 Ok(res) => {
                     if res.status().is_success() {
                         final_url = res.url().to_string();
@@ -180,7 +187,11 @@ impl DownloadEngineTask {
         } else {
             // Fresh download redirect & size probing
             let mut server_filename = None;
-            match client.get(&self.url).send().await {
+            let mut req = client.get(&self.url);
+            if let Some(ref ref_url) = self.referrer {
+                req = req.header(reqwest::header::REFERER, ref_url);
+            }
+            match req.send().await {
                 Ok(res) => {
                     if res.status().is_success() {
                         final_url = res.url().to_string();
@@ -289,7 +300,11 @@ impl DownloadEngineTask {
 
             // Probe range request support explicitly if Accept-Ranges header was omitted
             if !supports_ranges && total_size > 0 {
-                match client.get(&final_url).header(reqwest::header::RANGE, "bytes=0-0").send().await {
+                let mut req = client.get(&final_url).header(reqwest::header::RANGE, "bytes=0-0");
+                if let Some(ref ref_url) = self.referrer {
+                    req = req.header(reqwest::header::REFERER, ref_url);
+                }
+                match req.send().await {
                     Ok(res) => {
                         if res.status() == reqwest::StatusCode::PARTIAL_CONTENT {
                             supports_ranges = true;
@@ -380,8 +395,9 @@ impl DownloadEngineTask {
             let tx = progress_tx.clone();
 
             let token_clone = token.clone();
+            let ref_clone = self.referrer.clone();
             tokio::spawn(async move {
-                Self::run_segment(segment_id, url, f_path, client, start, current, end, tx, token_clone).await;
+                Self::run_segment(segment_id, url, f_path, client, start, current, end, tx, token_clone, ref_clone).await;
             });
 
             active_tokens.push(Some(token));
@@ -540,6 +556,7 @@ impl DownloadEngineTask {
         end: u64,
         progress_tx: tokio::sync::mpsc::UnboundedSender<SegmentEvent>,
         cancel_token: CancellationToken,
+        referrer: Option<String>,
     ) {
         let resume_start = current; // absolute start position
         if resume_start > end {
@@ -566,6 +583,7 @@ impl DownloadEngineTask {
                 end,
                 &progress_tx,
                 &cancel_token,
+                referrer.clone(),
             ).await {
                 Ok(_) => {
                     let _ = progress_tx.send(SegmentEvent::Completed { id });
@@ -599,11 +617,18 @@ impl DownloadEngineTask {
         end: u64,
         progress_tx: &tokio::sync::mpsc::UnboundedSender<SegmentEvent>,
         cancel_token: &CancellationToken,
+        referrer: Option<String>,
     ) -> Result<(), String> {
         let range_header = format!("bytes={}-{}", resume_start, end);
-        let res = client
+        let mut req = client
             .get(url)
-            .header(reqwest::header::RANGE, range_header)
+            .header(reqwest::header::RANGE, range_header);
+        
+        if let Some(ref ref_url) = referrer {
+            req = req.header(reqwest::header::REFERER, ref_url);
+        }
+
+        let res = req
             .send()
             .await
             .map_err(|e| e.to_string())?;
@@ -694,7 +719,12 @@ impl DownloadEngineTask {
             }
         }
         
-        let response = match client.get(&self.url).send().await {
+        let mut req = client.get(&self.url);
+        if let Some(ref ref_url) = self.referrer {
+            req = req.header(reqwest::header::REFERER, ref_url);
+        }
+        
+        let response = match req.send().await {
             Ok(res) => {
                 if !res.status().is_success() {
                     let err = format!("Server returned status: {}", res.status());
