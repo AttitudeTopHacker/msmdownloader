@@ -38,3 +38,49 @@
 .animate-shimmer {
   animation: shimmer 1.5s infinite linear;
 }
+
+/* Premium Keyframe Transitions */
+@keyframes backdrop-fade-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(4px);
+  }
+}
+
+@keyframes modal-zoom-in {
+  from {
+    transform: scale(0.94) translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes list-item-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-backdrop-in {
+  animation: backdrop-fade-in 0.18s ease-out forwards;
+}
+
+.animate-modal-zoom {
+  animation: modal-zoom-in 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-list-item {
+  animation: list-item-fade-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

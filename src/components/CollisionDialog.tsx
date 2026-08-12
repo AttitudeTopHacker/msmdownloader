@@ -30,8 +30,8 @@ export const CollisionDialog: React.FC<CollisionDialogProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 font-sans select-none text-neutral-300 animate-fadeIn">
-      <div className="relative w-full max-w-md bg-[#13131a] border border-neutral-800/80 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 font-sans select-none text-neutral-300 animate-backdrop-in">
+      <div className="relative w-full max-w-md bg-[#13131a] border border-neutral-800/80 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden flex flex-col animate-modal-zoom">
         {/* Header */}
         <div className="bg-[#1a1a24] px-5 py-4 border-b border-neutral-800/60 flex items-center space-x-3 text-amber-400 shrink-0">
           <div className="p-2 bg-amber-500/10 rounded-lg border border-amber-500/20">

@@ -117,9 +117,9 @@ export const AddDownloadModal: React.FC<AddDownloadModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-backdrop-in">
       {/* Modal Card */}
-      <div className="relative w-full max-w-lg bg-neutral-900 border border-neutral-800/80 rounded-2xl shadow-2xl p-6 overflow-hidden">
+      <div className="relative w-full max-w-lg bg-neutral-900 border border-neutral-800/80 rounded-2xl shadow-2xl p-6 overflow-hidden animate-modal-zoom">
         {/* Glow */}
         <div className="absolute -top-10 -right-10 w-40 h-40 bg-indigo-500/10 rounded-full blur-2xl"></div>
 

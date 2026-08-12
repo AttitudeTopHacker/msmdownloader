@@ -277,7 +277,7 @@ export const DownloadItemRow: React.FC<DownloadItemRowProps> = ({
   return (
     <div
       onDoubleClick={handleOpenDetails}
-      className="bg-neutral-900/60 border border-neutral-800/40 hover:border-indigo-500/20 hover:bg-neutral-900/80 rounded-xl p-4 transition-all duration-300 shadow-lg shadow-black/5 flex flex-col space-y-3 cursor-pointer"
+      className="bg-neutral-900/60 border border-neutral-800/40 hover:border-indigo-500/20 hover:bg-neutral-900/80 rounded-xl p-4 transition-all duration-300 shadow-lg shadow-black/5 flex flex-col space-y-3 cursor-pointer animate-list-item"
       title="Double-click to view connection details"
     >
       {/* Upper Panel */}

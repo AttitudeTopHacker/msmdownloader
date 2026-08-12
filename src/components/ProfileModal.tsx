@@ -137,8 +137,8 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-sans select-none text-neutral-300">
-      <div className="relative w-full max-w-md bg-[#14141a] border border-neutral-800 rounded-lg shadow-2xl overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 font-sans select-none text-neutral-300 animate-backdrop-in">
+      <div className="relative w-full max-w-md bg-[#14141a] border border-neutral-800 rounded-lg shadow-2xl overflow-hidden flex flex-col animate-modal-zoom">
         {/* Glow top border */}
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500"></div>
 

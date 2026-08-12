@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { X, Play, Pause, AlertTriangle, Copy, Check, Minus, Square } from "lucide-react";
@@ -305,7 +306,7 @@ export const DownloadDetailsModal: React.FC<DownloadDetailsModalProps> = ({
   const percentage = totalSize > 0 ? ((downloaded / totalSize) * 100).toFixed(2) : "0.00";
   const hasResumeCapability = resumable;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 overflow-hidden pointer-events-none" title="">
       {/* Absolute draggable & resizable window container */}
       <div
@@ -470,7 +471,7 @@ export const DownloadDetailsModal: React.FC<DownloadDetailsModalProps> = ({
                   <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
                     Start positions and download progress by connections:
                   </p>
-                  <div className="relative w-full bg-neutral-950 border border-neutral-800/80 rounded-md h-8 overflow-hidden">
+                  <div className="relative w-full bg-neutral-950 border border-neutral-800/80 rounded-md h-6 overflow-hidden">
                     {/* Grid showing current progress segments */}
                     <div className="absolute inset-0 flex">
                       {chunks.map((c) => {
@@ -643,6 +644,7 @@ export const DownloadDetailsModal: React.FC<DownloadDetailsModalProps> = ({
           </div>
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 };
