@@ -49,7 +49,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const enabled = enableToggle.checked;
     const skipExts = skipExtsInput.value.trim().toLowerCase();
 
-    chrome.storage.local.set({ enabled, skipExts, warning_dismissed: false }, () => {
+    chrome.storage.local.set({ enabled, skipExts }, () => {
       saveBtn.textContent = "Settings Saved!";
       saveBtn.style.background = "#10b981";
       setTimeout(() => {
