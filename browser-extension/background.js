@@ -1,5 +1,12 @@
-// MSM Downloader - Background Service Worker
-// Intercepts all browser downloads and sends them to the MSM Downloader app
+import {
+  ConnectionState,
+  WarningPreference,
+  getConnectionState,
+  setConnectionStatus,
+  snoozeWarning,
+  muteWarning,
+  DOWNLOAD_URL
+} from "./connectionManager.js";
 
 const MSM_SERVER = "http://127.0.0.1:9999";
 
@@ -64,6 +71,9 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
 
   // Check MSM is running
   const running = await isMsmRunning();
+  const status = running ? ConnectionState.CONNECTED : ConnectionState.DISCONNECTED;
+  await setConnectionStatus(status);
+
   if (!running) {
     // App not running — let browser handle it, show notification
     chrome.notifications.create({
@@ -127,6 +137,112 @@ chrome.downloads.onCreated.addListener(async (downloadItem) => {
       title: "MSM Downloader – Error",
       message: "Could not send to app. Download handled by browser.",
     });
+  }
+});
+
+const NOTIFICATION_ID = "msm_connection_warning";
+
+async function performStartupCheck() {
+  const running = await isMsmRunning();
+  const status = running ? ConnectionState.CONNECTED : ConnectionState.DISCONNECTED;
+  await setConnectionStatus(status);
+
+  if (!running) {
+    const { warning_preference } = await getConnectionState();
+    if (warning_preference === WarningPreference.NORMAL) {
+      chrome.notifications.create(NOTIFICATION_ID, {
+        type: "basic",
+        iconUrl: "icons/icon48.png",
+        title: "MSM Downloader - Offline",
+        message: "MSM Downloader app is not running. Launch the app to capture downloads.",
+        buttons: [
+          { title: "Retry Connection" },
+          { title: "Don't Ask Again" }
+        ],
+        requireInteraction: true
+      });
+    }
+  }
+}
+
+// Startup hooks
+chrome.runtime.onStartup.addListener(() => {
+  setTimeout(performStartupCheck, 2000);
+});
+
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === "install") {
+    chrome.storage.local.set({
+      connection_status: ConnectionState.DISCONNECTED,
+      warning_preference: WarningPreference.NORMAL,
+      snooze_until: 0
+    });
+  }
+  setTimeout(performStartupCheck, 2000);
+});
+
+// Alarm for periodic connection checking (auto-recovery)
+chrome.alarms.create("connection_health_check", { periodInMinutes: 1 });
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === "connection_health_check") {
+    const running = await isMsmRunning();
+    const status = running ? ConnectionState.CONNECTED : ConnectionState.DISCONNECTED;
+    
+    const { connection_status } = await getConnectionState();
+    if (status !== connection_status) {
+      await setConnectionStatus(status);
+      if (status === ConnectionState.CONNECTED) {
+        chrome.notifications.clear(NOTIFICATION_ID);
+      }
+    }
+  }
+});
+
+// Handlers for notification action buttons
+chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {
+  if (notificationId === NOTIFICATION_ID) {
+    if (buttonIndex === 0) {
+      // Retry Connection
+      const running = await isMsmRunning();
+      if (running) {
+        await setConnectionStatus(ConnectionState.CONNECTED);
+        chrome.notifications.clear(NOTIFICATION_ID);
+        chrome.notifications.create({
+          type: "basic",
+          iconUrl: "icons/icon48.png",
+          title: "MSM Downloader",
+          message: "Successfully connected to MSM Downloader app!",
+        });
+      } else {
+        await setConnectionStatus(ConnectionState.DISCONNECTED);
+        chrome.notifications.create({
+          type: "basic",
+          iconUrl: "icons/icon48.png",
+          title: "MSM Downloader",
+          message: "Connection failed. Please make sure the app is running.",
+        });
+      }
+    } else if (buttonIndex === 1) {
+      // Don't Ask Again
+      await muteWarning();
+      chrome.notifications.clear(NOTIFICATION_ID);
+    }
+  }
+});
+
+// Click notification body to download desktop client
+chrome.notifications.onClicked.addListener((notificationId) => {
+  if (notificationId === NOTIFICATION_ID) {
+    chrome.tabs.create({ url: DOWNLOAD_URL });
+    chrome.notifications.clear(NOTIFICATION_ID);
+  }
+});
+
+// Close/dismiss notification to snooze for 24 hours
+chrome.notifications.onClosed.addListener(async (notificationId, byUser) => {
+  if (notificationId === NOTIFICATION_ID && byUser) {
+    await snoozeWarning();
   }
 });
 

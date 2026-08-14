@@ -1,3 +1,5 @@
+import { getConnectionState, resetWarningPreference, WarningPreference } from "./connectionManager.js";
+
 document.addEventListener("DOMContentLoaded", async () => {
   const statusDot = document.getElementById("statusDot");
   const statusText = document.getElementById("statusText");
@@ -6,6 +8,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const folderInput = document.getElementById("folderInput");
   const skipExtsInput = document.getElementById("skipExts");
   const saveBtn = document.getElementById("saveBtn");
+  const resetAlertsRow = document.getElementById("resetAlertsRow");
+  const resetAlertsBtn = document.getElementById("resetAlertsBtn");
 
   const MSM_SERVER = "http://127.0.0.1:9999";
 
@@ -35,14 +39,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   }
 
+  // Check warning preferences and show reset row if muted or snoozed
+  async function updateAlertsResetUI() {
+    const { warning_preference } = await getConnectionState();
+    if (warning_preference === WarningPreference.MUTED || warning_preference === WarningPreference.SNOOZED) {
+      resetAlertsRow.style.display = "flex";
+    } else {
+      resetAlertsRow.style.display = "none";
+    }
+  }
+
   // Load current configuration
   chrome.storage.local.get({ enabled: true, skipExts: "html,htm,xml,json,php,asp,aspx" }, (settings) => {
     enableToggle.checked = settings.enabled;
     skipExtsInput.value = settings.skipExts;
   });
 
-  // Check status immediately
+  // Check status and preferences immediately
   await checkAppStatus();
+  await updateAlertsResetUI();
 
   // Save Settings
   saveBtn.addEventListener("click", () => {
@@ -57,5 +72,19 @@ document.addEventListener("DOMContentLoaded", async () => {
         saveBtn.style.background = "";
       }, 1500);
     });
+  });
+
+  // Reset Warnings Handler
+  resetAlertsBtn.addEventListener("click", async () => {
+    await resetWarningPreference();
+    await updateAlertsResetUI();
+    resetAlertsBtn.textContent = "Warnings Reset!";
+    resetAlertsBtn.style.background = "#10b981";
+    resetAlertsBtn.style.color = "#fff";
+    setTimeout(() => {
+      resetAlertsBtn.textContent = "Reset Warnings";
+      resetAlertsBtn.style.background = "";
+      resetAlertsBtn.style.color = "";
+    }, 1500);
   });
 });
