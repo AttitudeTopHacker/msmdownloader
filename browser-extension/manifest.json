@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MSM Downloader",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Intercepts browser downloads and sends them to MSM Downloader app for faster multi-connection downloading.",
 
   "icons": {
@@ -23,15 +23,15 @@
   },
 
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
 
   "permissions": [
     "downloads",
     "downloads.open",
     "storage",
-    "notifications"
+    "notifications",
+    "alarms"
   ],
 
   "host_permissions": [

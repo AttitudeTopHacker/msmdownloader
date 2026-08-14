@@ -1,12 +1,4 @@
-import {
-  ConnectionState,
-  WarningPreference,
-  getConnectionState,
-  setConnectionStatus,
-  snoozeWarning,
-  muteWarning,
-  DOWNLOAD_URL
-} from "./connectionManager.js";
+importScripts("connectionManager.js");
 
 const MSM_SERVER = "http://127.0.0.1:9999";
 

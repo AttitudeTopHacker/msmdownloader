@@ -2,20 +2,20 @@
 // Handles connection state, notifications cooldown, and preferences per profile.
 
 const SNOOZE_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
-export const DOWNLOAD_URL = "https://github.com/AttitudeTopHacker/msmdownloader/releases";
+const DOWNLOAD_URL = "https://github.com/AttitudeTopHacker/msmdownloader/releases";
 
-export const ConnectionState = {
+const ConnectionState = {
   CONNECTED: "CONNECTED",
   DISCONNECTED: "DISCONNECTED",
 };
 
-export const WarningPreference = {
+const WarningPreference = {
   NORMAL: "NORMAL",   // Shows alert on startup/recheck if disconnected
   SNOOZED: "SNOOZED", // Snoozed for 24 hours
   MUTED: "MUTED",     // "Don't ask again" - permanently muted
 };
 
-export async function getConnectionState() {
+async function getConnectionState() {
   const data = await chrome.storage.local.get({
     connection_status: ConnectionState.DISCONNECTED,
     warning_preference: WarningPreference.NORMAL,
@@ -31,12 +31,12 @@ export async function getConnectionState() {
   return data;
 }
 
-export async function setConnectionStatus(status) {
+async function setConnectionStatus(status) {
   await chrome.storage.local.set({ connection_status: status });
   updateExtensionBadge(status);
 }
 
-export async function snoozeWarning() {
+async function snoozeWarning() {
   const snoozeUntil = Date.now() + SNOOZE_COOLDOWN_MS;
   await chrome.storage.local.set({
     warning_preference: WarningPreference.SNOOZED,
@@ -45,14 +45,14 @@ export async function snoozeWarning() {
   updateExtensionBadge(ConnectionState.DISCONNECTED, WarningPreference.SNOOZED);
 }
 
-export async function muteWarning() {
+async function muteWarning() {
   await chrome.storage.local.set({
     warning_preference: WarningPreference.MUTED
   });
   updateExtensionBadge(ConnectionState.DISCONNECTED, WarningPreference.MUTED);
 }
 
-export async function resetWarningPreference() {
+async function resetWarningPreference() {
   await chrome.storage.local.set({
     warning_preference: WarningPreference.NORMAL,
     snooze_until: 0
@@ -62,7 +62,7 @@ export async function resetWarningPreference() {
   updateExtensionBadge(connection_status, WarningPreference.NORMAL);
 }
 
-export function updateExtensionBadge(status, pref) {
+function updateExtensionBadge(status, pref) {
   if (!pref) {
     chrome.storage.local.get({ warning_preference: WarningPreference.NORMAL }, (res) => {
       applyBadge(status, res.warning_preference);

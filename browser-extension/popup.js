@@ -1,4 +1,3 @@
-import { getConnectionState, resetWarningPreference, WarningPreference } from "./connectionManager.js";
 
 document.addEventListener("DOMContentLoaded", async () => {
   const statusDot = document.getElementById("statusDot");
